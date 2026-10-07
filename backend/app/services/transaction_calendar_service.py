@@ -28,6 +28,7 @@ from app.services.fx_rate_service import convert as fx_convert
 from app.services.recurring_transaction_service import (
     adjust_weekend_date,
     get_occurrences_in_range,
+    should_show_projection,
 )
 
 
@@ -404,13 +405,15 @@ def _forecast_item(
     )
 
 
-def _count_occurrences_before(recurring: RecurringTransaction, end: date) -> int:
+def _count_occurrences_before(recurring: RecurringTransaction, end: date, today: date) -> int:
     """Count still-virtual effective occurrences before ``end`` without truncating."""
     nominal_start = recurring.next_occurrence
     first_effective = adjust_weekend_date(
         nominal_start, recurring.weekend_adjustment
     )
     range_start = min(nominal_start, first_effective)
+    if recurring.hide_projection_after_due:
+        range_start = max(range_start, today)
     range_end = end
     if recurring.end_date is not None:
         final_effective = adjust_weekend_date(
@@ -469,6 +472,7 @@ async def _project_recurring_items(
     items: list[tuple[TransactionCalendarItem, float]] = []
     deltas: dict[date, float] = {}
     carried_delta = 0.0
+    today = app_today()
     for rec in recurring_rows:
         if rec.account_id is None:
             continue
@@ -490,8 +494,10 @@ async def _project_recurring_items(
         is_transfer = bool(category and category.treat_as_transfer)
         is_ignored = bool(category and category.is_ignored)
         if not is_ignored:
-            carried_delta += _count_occurrences_before(rec, start) * signed_delta
+            carried_delta += _count_occurrences_before(rec, start, today) * signed_delta
         for occ_date in occurrences:
+            if not should_show_projection(rec, occ_date, today):
+                continue
             item = TransactionCalendarItem(
                 kind="projected",
                 recurring_id=rec.id,

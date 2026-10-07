@@ -1513,6 +1513,11 @@
     "generatePending": "Generuj oczekujące",
     "autoGenerate": "Automatycznie generuj transakcje",
     "autoGenerateHelp": "Tworzy transakcję za każdym razem, gdy ten rachunek jest wymagalny. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
+    "transactionHandling": "Po terminie tej transakcji cyklicznej",
+    "keepProjection": "Pokazuj prognozę do czasu rozliczenia",
+    "keepProjectionHelp": "Oczekiwana transakcja pozostanie widoczna do momentu rozliczenia rzeczywistej transakcji.",
+    "hideProjectionAfterDue": "Ukryj prognozę po terminie",
+    "hideProjectionAfterDueHelp": "Pokazuj ją do terminu, a potem ukryj bez tworzenia transakcji.",
     "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić.",
     "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć."
   },

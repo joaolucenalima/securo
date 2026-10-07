@@ -1455,6 +1455,11 @@
     "generatePending": "Générer les transactions en attente",
     "autoGenerate": "Générer les transactions automatiquement",
     "autoGenerateHelp": "Créer une transaction à chaque échéance de cette facture. Désactivez pour attendre le prélèvement réel (ex. via la synchronisation bancaire) et l'afficher uniquement comme à venir jusque-là.",
+    "transactionHandling": "À l’échéance de cette récurrence",
+    "keepProjection": "Garder la prévision jusqu’à son rapprochement",
+    "keepProjectionHelp": "La transaction prévue reste visible jusqu’au rapprochement d’une transaction réelle.",
+    "hideProjectionAfterDue": "Masquer la prévision après son échéance",
+    "hideProjectionAfterDueHelp": "L’afficher jusqu’à la date d’échéance, puis la masquer sans créer de transaction.",
     "fxEstimate": "Estimation basée sur le dernier taux de change ({{rate}}). Le montant final peut varier.",
     "confirmDeleteDescription": "La définition récurrente « {{description}} » sera définitivement supprimée. Les transactions existantes resteront, mais perdront leur lien récurrent. Cette action est irréversible."
   },

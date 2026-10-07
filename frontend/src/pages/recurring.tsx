@@ -342,6 +342,9 @@ function RecurringForm({
   const [accountId, setAccountId] = useState(recurring?.account_id ?? sortedAccounts[0]?.id ?? '')
   const [isActive, setIsActive] = useState(recurring?.is_active ?? true)
   const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? true)
+  const [hideProjectionAfterDue, setHideProjectionAfterDue] = useState(
+    recurring?.hide_projection_after_due ?? false
+  )
 
   const selectClass = 'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 
@@ -363,6 +366,7 @@ function RecurringForm({
           account_id: accountId || null,
           is_active: isActive,
           auto_generate: autoGenerate,
+          hide_projection_after_due: !autoGenerate && hideProjectionAfterDue,
         } as Partial<RecurringTransaction>)
       }}
       className="space-y-4"
@@ -461,18 +465,48 @@ function RecurringForm({
           </select>
         </div>
       </div>
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={autoGenerate}
-          onChange={(e) => setAutoGenerate(e.target.checked)}
-          className="h-4 w-4 mt-0.5 rounded border-border"
-        />
-        <span className="text-sm text-foreground">
-          {t('recurring.autoGenerate')}
-          <span className="block text-xs text-muted-foreground">{t('recurring.autoGenerateHelp')}</span>
-        </span>
-      </label>
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium text-foreground">{t('recurring.transactionHandling')}</legend>
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="radio"
+            name="recurring-transaction-handling"
+            checked={autoGenerate}
+            onChange={() => setAutoGenerate(true)}
+            className="h-4 w-4 mt-0.5 border-border"
+          />
+          <span className="text-sm text-foreground">
+            {t('recurring.autoGenerate')}
+            <span className="block text-xs text-muted-foreground">{t('recurring.autoGenerateHelp')}</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="radio"
+            name="recurring-transaction-handling"
+            checked={!autoGenerate && !hideProjectionAfterDue}
+            onChange={() => { setAutoGenerate(false); setHideProjectionAfterDue(false) }}
+            className="h-4 w-4 mt-0.5 border-border"
+          />
+          <span className="text-sm text-foreground">
+            {t('recurring.keepProjection')}
+            <span className="block text-xs text-muted-foreground">{t('recurring.keepProjectionHelp')}</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="radio"
+            name="recurring-transaction-handling"
+            checked={!autoGenerate && hideProjectionAfterDue}
+            onChange={() => { setAutoGenerate(false); setHideProjectionAfterDue(true) }}
+            className="h-4 w-4 mt-0.5 border-border"
+          />
+          <span className="text-sm text-foreground">
+            {t('recurring.hideProjectionAfterDue')}
+            <span className="block text-xs text-muted-foreground">{t('recurring.hideProjectionAfterDueHelp')}</span>
+          </span>
+        </label>
+      </fieldset>
       {recurring && (
         <label className="flex items-center gap-2 cursor-pointer">
           <input

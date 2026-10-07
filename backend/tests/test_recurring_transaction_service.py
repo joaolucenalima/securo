@@ -20,8 +20,21 @@ from app.services.recurring_transaction_service import (
     get_occurrences_in_range,
     get_recurring_transaction,
     get_recurring_transactions,
+    should_show_projection,
     update_recurring_transaction,
 )
+
+
+def test_expiring_projection_is_visible_through_effective_due_date():
+    from app.models.recurring_transaction import RecurringTransaction
+
+    recurring = RecurringTransaction(hide_projection_after_due=True)
+    effective_date = adjust_weekend_date(date(2026, 8, 1), "previous_friday")
+    assert effective_date == date(2026, 7, 31)
+    assert should_show_projection(recurring, effective_date, date(2026, 7, 31))
+    assert not should_show_projection(recurring, effective_date, date(2026, 8, 1))
+    recurring.hide_projection_after_due = False
+    assert should_show_projection(recurring, effective_date, date(2026, 8, 1))
 
 
 @pytest_asyncio.fixture
@@ -65,6 +78,40 @@ async def test_create_recurring_transaction(
     assert rec.frequency == "monthly"
     assert rec.next_occurrence == date(2025, 1, 15)
     assert rec.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_expiring_projection_never_generates_transaction(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    data = RecurringTransactionCreate(
+        description="Bank charge",
+        amount=Decimal("39.90"),
+        type="debit",
+        frequency="monthly",
+        start_date=date(2026, 1, 15),
+        account_id=test_account_for_recurring.id,
+        auto_generate=False,
+        hide_projection_after_due=True,
+    )
+    recurring = await create_recurring_transaction(session, test_workspace.id, test_user.id, data)
+
+    assert await generate_pending(session, test_user.id, up_to=date(2026, 3, 31)) == 0
+    assert recurring.next_occurrence == date(2026, 1, 15)
+    assert not (await session.execute(
+        select(Transaction).where(Transaction.recurring_transaction_id == recurring.id)
+    )).scalars().all()
+
+    with pytest.raises(ValueError, match="Expiring projections require"):
+        await update_recurring_transaction(
+            session, recurring.id, test_workspace.id,
+            RecurringTransactionUpdate(auto_generate=True),
+        )
+    with pytest.raises(ValueError, match="Expiring projections require"):
+        await create_recurring_transaction(
+            session, test_workspace.id, test_user.id,
+            data.model_copy(update={"auto_generate": True}),
+        )
 
 
 @pytest.mark.asyncio

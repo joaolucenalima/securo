@@ -1451,6 +1451,11 @@
     "generatePending": "Generate Pending",
     "autoGenerate": "Generate transactions automatically",
     "autoGenerateHelp": "Create a transaction each time this bill is due. Turn off to wait for the real charge (e.g. from bank sync) and only show it as upcoming until then.",
+    "transactionHandling": "When this recurring item is due",
+    "keepProjection": "Keep showing the projection until it is matched",
+    "keepProjectionHelp": "Keep the expected transaction visible until a real transaction is matched.",
+    "hideProjectionAfterDue": "Hide the projection after its due date",
+    "hideProjectionAfterDueHelp": "Show it through the due date, then hide it without creating a transaction.",
     "fxEstimate": "Estimate based on latest exchange rate ({{rate}}). Final amount may change.",
     "confirmDeleteDescription": "The recurring definition \"{{description}}\" will be permanently deleted. Existing transactions will remain but lose their recurring link. This action cannot be undone."
   },

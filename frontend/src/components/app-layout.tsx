@@ -4,6 +4,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
+import { useFinancialDayRefresh } from '@/hooks/use-financial-day-refresh'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -89,6 +90,7 @@ function NavSkeleton() {
 }
 
 export function AppLayout() {
+  useFinancialDayRefresh()
   const { t } = useTranslation()
   const { user, logout, updateUser } = useAuth()
   const { activeAccountIds } = useCollectionFilter()

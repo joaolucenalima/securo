@@ -1451,6 +1451,11 @@
     "generatePending": "保留中を生成",
     "autoGenerate": "取引を自動生成",
     "autoGenerateHelp": "この支払いの期日が来るたびに取引を作成します。オフにすると、実際の請求(銀行同期など)を待ち、それまでは予定として表示するだけになります。",
+    "transactionHandling": "この定期取引の期日後の扱い",
+    "keepProjection": "照合されるまで予測を表示する",
+    "keepProjectionHelp": "実際の取引が照合されるまで、予定された取引を表示します。",
+    "hideProjectionAfterDue": "期日後に予測を非表示にする",
+    "hideProjectionAfterDueHelp": "期日までは表示し、その後は取引を作成せずに非表示にします。",
     "fxEstimate": "最新の為替レートによる推定({{rate}})。最終金額は変わる場合があります。",
     "confirmDeleteDescription": "定期取引の定義「{{description}}」を完全に削除します。既存の取引は残りますが、定期の紐付けが失われます。この操作は取り消せません。"
   },

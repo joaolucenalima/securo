@@ -1455,6 +1455,11 @@
     "generatePending": "Gerar Pendentes",
     "autoGenerate": "Gerar transações automaticamente",
     "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desative para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
+    "transactionHandling": "Quando esta recorrência vencer",
+    "keepProjection": "Manter a previsão até ela ser conciliada",
+    "keepProjectionHelp": "Mantenha a transação esperada visível até que uma transação real seja conciliada.",
+    "hideProjectionAfterDue": "Ocultar a previsão após o vencimento",
+    "hideProjectionAfterDueHelp": "Mostra a previsão até o vencimento e depois a oculta sem criar uma transação.",
     "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar.",
     "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será excluída permanentemente. As transações existentes permanecerão, mas perderão o vínculo recorrente. Esta ação não pode ser desfeita."
   },

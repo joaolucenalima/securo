@@ -1455,6 +1455,11 @@
     "generatePending": "Genera in sospeso",
     "autoGenerate": "Genera transazioni automaticamente",
     "autoGenerateHelp": "Crea una transazione ogni volta che questa spesa è in scadenza. Disattiva per attendere l'addebito reale (ad es. dalla sincronizzazione bancaria) e mostrarla solo come in arrivo fino ad allora.",
+    "transactionHandling": "Quando scade questa ricorrenza",
+    "keepProjection": "Mantieni la previsione fino alla riconciliazione",
+    "keepProjectionHelp": "La transazione prevista resta visibile finché non viene riconciliata una transazione reale.",
+    "hideProjectionAfterDue": "Nascondi la previsione dopo la scadenza",
+    "hideProjectionAfterDueHelp": "Mostrala fino alla data di scadenza, poi nascondila senza creare una transazione.",
     "fxEstimate": "Stima basata sull'ultimo tasso di cambio ({{rate}}). L'importo finale può variare.",
     "confirmDeleteDescription": "La definizione ricorrente \"{{description}}\" verrà eliminata definitivamente. Le transazioni esistenti rimarranno, ma perderanno il collegamento ricorrente. Questa azione non può essere annullata."
   },

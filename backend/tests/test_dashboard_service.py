@@ -591,6 +591,42 @@ async def test_spending_percentage(session: AsyncSession, test_user, test_worksp
 
 
 @pytest.mark.asyncio
+async def test_expiring_projection_disappears_from_lists_and_totals_after_due_date(
+    session, test_user, test_workspace, monkeypatch
+):
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Expiring account", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    recurring = RecurringTransaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Expiring bill", amount=Decimal("100"),
+        currency="BRL", type="debit", frequency="monthly",
+        start_date=date(2026, 7, 10), next_occurrence=date(2026, 7, 10),
+        auto_generate=False, hide_projection_after_due=True,
+    )
+    session.add_all([account, recurring])
+    await session.commit()
+
+    monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: date(2026, 7, 10))
+    assert len(await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )) == 1
+
+    monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: date(2026, 7, 11))
+    assert await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    ) == []
+    assert await _get_recurring_projections(
+        session, test_workspace.id, date(2026, 7, 1), date(2026, 8, 1)
+    ) == []
+    august = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=date(2026, 8, 1)
+    )
+    assert [row.date for row in august] == ["2026-08-10"]
+
+
+@pytest.mark.asyncio
 async def test_get_projected_transactions(session: AsyncSession, test_user, test_workspace):
     """Projected transactions include recurring template details."""
     cat = await _make_category(session, test_user.id, "Recurring Cat")

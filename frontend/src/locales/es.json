@@ -1455,6 +1455,11 @@
     "generatePending": "Generar pendientes",
     "autoGenerate": "Generar transacciones automáticamente",
     "autoGenerateHelp": "Crea una transacción cada vez que vence esta factura. Desactívalo para esperar el cargo real (por ejemplo, de la sincronización bancaria) y mostrarla solo como próxima hasta entonces.",
+    "transactionHandling": "Cuando venza esta recurrencia",
+    "keepProjection": "Mantener la previsión hasta conciliarla",
+    "keepProjectionHelp": "La transacción prevista seguirá visible hasta que se concilie una transacción real.",
+    "hideProjectionAfterDue": "Ocultar la previsión después del vencimiento",
+    "hideProjectionAfterDueHelp": "Mostrarla hasta la fecha de vencimiento y ocultarla después sin crear una transacción.",
     "fxEstimate": "Estimación basada en el último tipo de cambio ({{rate}}). El importe final puede cambiar.",
     "confirmDeleteDescription": "La definición recurrente \"{{description}}\" se eliminará permanentemente. Las transacciones existentes permanecerán, pero perderán su vínculo recurrente. Esta acción no se puede deshacer."
   },

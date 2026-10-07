@@ -63,6 +63,8 @@ async def create_recurring_transaction(
     user_id: uuid.UUID,
     data: RecurringTransactionCreate,
 ) -> RecurringTransaction:
+    if data.hide_projection_after_due and data.auto_generate:
+        raise ValueError("Expiring projections require auto_generate to be false")
     await _verify_account_in_workspace(session, workspace_id, data.account_id)
     next_occ = data.start_date
     if data.skip_first:
@@ -85,6 +87,7 @@ async def create_recurring_transaction(
         start_date=data.start_date,
         end_date=data.end_date,
         auto_generate=data.auto_generate,
+        hide_projection_after_due=data.hide_projection_after_due,
         next_occurrence=next_occ,
     )
     session.add(recurring)
@@ -106,6 +109,12 @@ async def update_recurring_transaction(
         return None
 
     update_data = data.model_dump(exclude_unset=True)
+    auto_generate = update_data.get("auto_generate", recurring.auto_generate)
+    hide_after_due = update_data.get("hide_projection_after_due", recurring.hide_projection_after_due)
+    if auto_generate is None or hide_after_due is None:
+        raise ValueError("Projection options cannot be null")
+    if auto_generate and hide_after_due:
+        raise ValueError("Expiring projections require auto_generate to be false")
 
     for required in ("weekend_adjustment", "start_date", "frequency"):
         if required in update_data and update_data[required] is None:
@@ -229,6 +238,11 @@ def adjust_weekend_date(
     if weekend_adjustment == "previous_friday":
         return nominal_date - timedelta(days=weekday - calendar.FRIDAY)
     return nominal_date + timedelta(days=7 - weekday)
+
+
+def should_show_projection(recurring: RecurringTransaction, effective_date: date, today: date) -> bool:
+    """An expiring virtual occurrence is visible through its effective due date."""
+    return not recurring.hide_projection_after_due or effective_date >= today
 
 
 def get_occurrences_in_range(

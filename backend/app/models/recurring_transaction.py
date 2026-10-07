@@ -25,6 +25,10 @@ class RecurringTransaction(Base):
             "weekend_adjustment IN ('none', 'previous_friday', 'next_monday')",
             name="ck_recurring_transactions_weekend_adjustment",
         ),
+        CheckConstraint(
+            "NOT hide_projection_after_due OR NOT auto_generate",
+            name="ck_recurring_transactions_expiring_projection",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -52,6 +56,7 @@ class RecurringTransaction(Base):
     # matched to it (e.g. from bank sync). Either way, incoming real
     # transactions are linked back to the bill to avoid duplicates.
     auto_generate: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    hide_projection_after_due: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     next_occurrence: Mapped[date] = mapped_column(Date)
     amount_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     fx_rate_used: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=20, scale=10), nullable=True)

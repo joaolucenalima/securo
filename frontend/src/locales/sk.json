@@ -1531,6 +1531,11 @@
     "generatePending": "Vygenerovať čakajúce",
     "autoGenerate": "Generovať transakcie automaticky",
     "autoGenerateHelp": "Vytvorí transakciu vždy, keď je táto platba splatná. Vypni, ak chceš počkať na skutočnú platbu (napr. zo synchronizácie banky) a dovtedy ju zobrazovať len ako nadchádzajúcu.",
+    "transactionHandling": "Keď je táto opakovaná položka splatná",
+    "keepProjection": "Zobrazovať predpokladanú transakciu až do spárovania",
+    "keepProjectionHelp": "Očakávaná transakcia zostane viditeľná, kým sa nespáruje skutočná transakcia.",
+    "hideProjectionAfterDue": "Skryť predpokladanú transakciu po splatnosti",
+    "hideProjectionAfterDueHelp": "Zobrazovať ju do dátumu splatnosti a potom ju skryť bez vytvorenia transakcie.",
     "fxEstimate": "Odhad podľa posledného výmenného kurzu ({{rate}}). Konečná suma sa môže zmeniť.",
     "confirmDeleteDescription": "Opakovaná definícia „{{description}}“ bude natrvalo vymazaná. Existujúce transakcie zostanú, ale stratia prepojenie na opakovanie. Túto akciu nie je možné vrátiť späť."
   },

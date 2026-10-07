@@ -617,6 +617,7 @@ export interface RecurringTransaction {
   end_date: string | null
   is_active: boolean
   auto_generate: boolean
+  hide_projection_after_due: boolean
   next_occurrence: string
   amount_primary: number | null
   fx_rate_used: number | null

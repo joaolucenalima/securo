@@ -25,7 +25,7 @@ from app.services._query_filters import (
 )
 from app.services import invoice_forecast_service
 from app.services.admin_service import get_credit_card_accounting_mode
-from app.services.recurring_transaction_service import get_occurrences_in_range
+from app.services.recurring_transaction_service import get_occurrences_in_range, should_show_projection
 from app.services.asset_service import get_asset_values_at
 from app.services.fx_rate_service import _resolve_rate, convert
 from app.models.user import User
@@ -125,6 +125,7 @@ async def _get_recurring_projections(
     )
 
     projections = []
+    today = app_today()
     for rec in recurring_list:
         # Compute occurrences from the nominal pointer; linked rows are
         # filtered explicitly below because the pointer can lag materialization.
@@ -138,6 +139,8 @@ async def _get_recurring_projections(
             weekend_adjustment=rec.weekend_adjustment,
         )
         for occ_date in occurrences:
+            if not should_show_projection(rec, occ_date, today):
+                continue
             if (rec.id, occ_date) in materialized_occurrences:
                 continue
             projections.append({
@@ -1121,6 +1124,7 @@ async def get_projected_transactions(
             cat_map[row[0]] = (row[1], row[2], row[3])
 
     projections: list[ProjectedTransaction] = []
+    today = app_today()
     for rec in recurring_list:
         occurrences = get_occurrences_in_range(
             start=rec.next_occurrence,
@@ -1147,6 +1151,8 @@ async def get_projected_transactions(
                 )
 
         for occ_date in occurrences:
+            if not should_show_projection(rec, occ_date, today):
+                continue
             if (rec.id, occ_date) in materialized_occurrences:
                 continue
             projections.append(ProjectedTransaction(

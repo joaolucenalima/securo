@@ -1452,6 +1452,11 @@
     "generatePending": "Ausstehende erstellen",
     "autoGenerate": "Transaktionen automatisch erstellen",
     "autoGenerateHelp": "Erstellt bei jeder Fälligkeit dieser Rechnung eine Transaktion. Deaktivieren, um auf die tatsächliche Belastung (z. B. aus der Banksynchronisierung) zu warten und sie bis dahin nur als anstehend anzuzeigen.",
+    "transactionHandling": "Wenn dieser wiederkehrende Eintrag fällig ist",
+    "keepProjection": "Prognose anzeigen, bis sie abgeglichen ist",
+    "keepProjectionHelp": "Die erwartete Transaktion bleibt sichtbar, bis eine echte Transaktion abgeglichen wurde.",
+    "hideProjectionAfterDue": "Prognose nach Fälligkeit ausblenden",
+    "hideProjectionAfterDueHelp": "Bis zum Fälligkeitstag anzeigen und danach ausblenden, ohne eine Transaktion zu erstellen.",
     "fxEstimate": "Schätzung basierend auf dem aktuellsten Wechselkurs ({{rate}}). Der endgültige Betrag kann abweichen.",
     "confirmDeleteDescription": "Die wiederkehrende Transaktion \"{{description}}\" wird dauerhaft gelöscht. Vorhandene Transaktionen bleiben bestehen, verlieren jedoch ihre Verknüpfung zur wiederkehrenden Transaktion. Diese Aktion kann nicht rückgängig gemacht werden."
   },
