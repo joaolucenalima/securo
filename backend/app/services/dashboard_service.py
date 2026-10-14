@@ -16,7 +16,6 @@ from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, DailyBalance, BalanceHistory
 from app.services._query_filters import (
-    counts_as_user_pnl,
     owner_split_offset_by_category,
     owner_split_offset_pnl,
     reporting_date_col,
@@ -589,6 +588,7 @@ async def get_summary(
     projected_expenses_primary = monthly_expenses_primary
 
     # Add recurring projections to primary forecast totals (convert each)
+    recurring_expenses_primary = 0.0
     for proj in projections:
         proj_converted, _ = await convert(
             session, Decimal(str(proj["amount"])),
@@ -598,6 +598,7 @@ async def get_summary(
             projected_income_primary += float(proj_converted)
         else:
             projected_expenses_primary += float(proj_converted)
+            recurring_expenses_primary += abs(float(proj_converted))
     for tx in forecast_transactions:
         if not _counts_as_user_pnl_row(tx):
             continue
@@ -637,6 +638,7 @@ async def get_summary(
         projected_expenses=abs(projected_monthly_expenses),
         projected_income_primary=round(projected_income_primary, 2),
         projected_expenses_primary=round(projected_expenses_primary, 2),
+        recurring_expenses_primary=round(recurring_expenses_primary, 2),
         accounts_count=accounts_count,
         pending_categorization=pending_categorization,
         pending_categorization_amount=pending_categorization_amount,
