@@ -16,6 +16,7 @@ from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, DailyBalance, BalanceHistory
 from app.services._query_filters import (
+    counts_as_user_pnl,
     owner_split_offset_by_category,
     owner_split_offset_pnl,
     reporting_date_col,
