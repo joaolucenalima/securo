@@ -10,7 +10,7 @@ import { localDateString } from '@/lib/date-utils'
 import { applyTransactionToBalance, excludeMaterializedProjections, transactionAmountForBalance } from '@/lib/account-detail-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
-import { closeDateForBill, isOpenCycleWindow } from '@/lib/credit-card-cycle'
+import { closeDateForBill, creditCardCycleBoundaries, cycleEndForBill, isOpenCycleWindow, previousCloseDate } from '@/lib/credit-card-cycle'
 import { toast } from 'sonner'
 import type { CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -90,21 +90,9 @@ function defaultCycleForCreditCard(
     const nm = m === 11 ? 0 : m + 1
     billDate = new Date(ny, nm, clampDue(ny, nm))
   }
-  // Step 2: find the cycle whose bill is `billDate` — its close date is the
-  // most recent closeDay on or before billDate. The cycle's inclusive last
-  // day is one day before that close (per Brazilian convention).
-  const by = billDate.getFullYear()
-  const bm = billDate.getMonth()
-  const clampClose = (yy: number, mm: number) => Math.min(closeDay, daysInMonth(yy, mm))
-  const sameMonthClose = new Date(by, bm, clampClose(by, bm))
-  let cycleClose: Date
-  if (sameMonthClose.getTime() <= billDate.getTime()) {
-    cycleClose = sameMonthClose
-  } else {
-    const py = bm === 0 ? by - 1 : by
-    const pm = bm === 0 ? 11 : bm - 1
-    cycleClose = new Date(py, pm, clampClose(py, pm))
-  }
+  // Step 2: find the cycle whose bill is `billDate`. Its closing day opens
+  // the next cycle.
+  const cycleClose = parseISO(closeDateForBill(format(billDate, 'yyyy-MM-dd'), closeDay) + 'T00:00:00')
   const refInsideCycle = new Date(cycleClose)
   refInsideCycle.setDate(refInsideCycle.getDate() - 1)
   return creditCardCycleBoundaries(closeDay, refInsideCycle)
@@ -159,15 +147,22 @@ function creditCardCycleLabel(
   return format(bill, 'MMM yyyy', { locale: dateFnsLocale })
 }
 
-/** Build the [start, end] range a credit-card transaction would belong to
- * when the cycle is anchored on a real bill (issue #92). The bill's due_date
- * is the period end; the start is the day after the previous bill's due_date,
- * which is when the post-close cycle begins. For the oldest known bill we
- * fall back to a wide window so any older purchases still show up. */
+/** Use consecutive adjusted closing dates for bills with a configured close day.
+ * Without one, retain the due-date window used by older accounts. */
 function rangeForBill(
   bill: CreditCardBill,
   prevBill: CreditCardBill | null,
+  closeDay?: number | null,
 ): { start: string; end: string } {
+  if (closeDay) {
+    const close = closeDateForBill(bill.due_date, closeDay)
+    const end = cycleEndForBill(bill.due_date, closeDay)
+    const previousClose = previousCloseDate(close, closeDay)
+    return {
+      start: previousClose,
+      end,
+    }
+  }
   const end = bill.due_date
   const start = prevBill
     ? format(addDays(parseISO(prevBill.due_date + 'T00:00:00'), 1), 'yyyy-MM-dd')
@@ -175,50 +170,6 @@ function rangeForBill(
   return { start, end }
 }
 
-
-/** Return the [start, end] dates of the billing cycle that CONTAINS `reference`.
- * Brazilian convention: a transaction ON the close day belongs to the NEXT
- * cycle, so the cycle boundaries are [previous close day, next close day − 1].
- * Falls back to "previous month → today" when no closeDay is configured. */
-function creditCardCycleBoundaries(
-  closeDay: number | null | undefined,
-  reference: Date,
-): { start: string; end: string } {
-  if (!closeDay) {
-    const y = reference.getFullYear()
-    const m = reference.getMonth()
-    return {
-      start: format(new Date(y, m - 1, 1), 'yyyy-MM-dd'),
-      end: format(reference, 'yyyy-MM-dd'),
-    }
-  }
-  const ref0 = new Date(reference)
-  ref0.setHours(0, 0, 0, 0)
-  const y = ref0.getFullYear()
-  const m = ref0.getMonth()
-  const clamp = (yy: number, mm: number) => Math.min(closeDay, daysInMonth(yy, mm))
-  // The cycle containing `reference` ends the day before the next close date
-  // strictly after `reference`.
-  const thisMonthClose = new Date(y, m, clamp(y, m))
-  let nextClose: Date
-  if (thisMonthClose.getTime() > ref0.getTime()) {
-    nextClose = thisMonthClose
-  } else {
-    const nextY = m === 11 ? y + 1 : y
-    const nextM = m === 11 ? 0 : m + 1
-    nextClose = new Date(nextY, nextM, clamp(nextY, nextM))
-  }
-  const end = new Date(nextClose)
-  end.setDate(end.getDate() - 1)
-  // Start = the previous close day (the close day itself opens a new cycle).
-  const prevY = nextClose.getMonth() === 0 ? nextClose.getFullYear() - 1 : nextClose.getFullYear()
-  const prevM = nextClose.getMonth() === 0 ? 11 : nextClose.getMonth() - 1
-  const start = new Date(prevY, prevM, clamp(prevY, prevM))
-  return {
-    start: format(start, 'yyyy-MM-dd'),
-    end: format(end, 'yyyy-MM-dd'),
-  }
-}
 
 function formatDateStr(dateStr: string, locale = 'pt-BR') {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
@@ -314,29 +265,18 @@ export default function AccountDetailPage() {
     if (!bills) return []
     return [...bills].sort((a, b) => a.due_date.localeCompare(b.due_date))
   }, [bills])
-  // The bill, if any, the active filter currently corresponds to. We always
-  // set filterTo = bill.due_date when navigating to a bill, so the lookup is
-  // a simple equality check.
+  // The active filter ends before a bill's closing day when configured, or on
+  // its due date for cards without closing metadata.
   const activeBill = useMemo(() => {
     if (!billsAsc.length) return null
-    return billsAsc.find(b => b.due_date === filterTo) ?? null
-  }, [billsAsc, filterTo])
-  // True when the user is on the trailing in-progress cycle. Backend uses this
-  // to exclude already-billed txs from the cycle window so they don't double-
-  // count against the in-progress bar/total.
-  //
-  // Not matching a bill is necessary but nowhere near sufficient: any window
-  // the user picks by hand misses the equality check above, and asking for
-  // unbilled transactions over a period that already closed drops the charges
-  // those bills carry. Widening a cycle by five days used to shrink its total,
-  // which is the one thing a wider window must never do. So the window also
-  // has to start inside the cycle that is still open, which is what the
-  // next-cycle arrow produces and a hand-edited range over history does not.
-  const isInProgressCycle = useMemo(() => {
-    if (activeBill || !billsAsc.length) return false
-    const newestBill = billsAsc[billsAsc.length - 1]
-    return isOpenCycleWindow(filterFrom, newestBill.due_date, account?.statement_close_day)
-  }, [activeBill, billsAsc, filterFrom, account?.statement_close_day])
+    if (!account?.statement_close_day) {
+      return billsAsc.find(bill => bill.due_date === filterTo) ?? null
+    }
+    return billsAsc.find((bill, index) => {
+      const range = rangeForBill(bill, index > 0 ? billsAsc[index - 1] : null, account?.statement_close_day)
+      return range.start === filterFrom && range.end === filterTo
+    }) ?? null
+  }, [billsAsc, filterFrom, filterTo, account?.statement_close_day])
 
   // A window this page computed, as opposed to one the user picked in the
   // date fields. Every cycle range here comes out of creditCardCycleBoundaries
@@ -352,6 +292,14 @@ export default function AccountDetailPage() {
     return cycle.start === filterFrom && cycle.end === filterTo
   }, [account?.statement_close_day, filterFrom, filterTo])
 
+  // A missing bill uses only unlinked purchases, including historical gaps.
+  // Custom date ranges retain billed history instead of excluding it.
+  const isUnbilledCycle = useMemo(() => {
+    if (activeBill || !billsAsc.length) return false
+    if (account?.statement_close_day) return isCycleMathWindow
+    return isOpenCycleWindow(filterFrom, billsAsc[billsAsc.length - 1].due_date, null)
+  }, [activeBill, billsAsc, filterFrom, account?.statement_close_day, isCycleMathWindow])
+
   const [cycleSource, setCycleSource] = useState<{ account: typeof account; bills: typeof bills } | null>(null)
   if (!cycleSource || cycleSource.account !== account || cycleSource.bills !== bills) {
     setCycleSource({ account, bills })
@@ -360,7 +308,7 @@ export default function AccountDetailPage() {
       const upcomingIndex = billsAsc.findIndex(b => b.due_date >= today)
       const upcoming = billsAsc[upcomingIndex]
       const range = upcoming
-        ? rangeForBill(upcoming, upcomingIndex > 0 ? billsAsc[upcomingIndex - 1] : null)
+        ? rangeForBill(upcoming, upcomingIndex > 0 ? billsAsc[upcomingIndex - 1] : null, account.statement_close_day)
         : billsAsc.length > 0 && account.statement_close_day
           ? creditCardCycleBoundaries(account.statement_close_day, new Date())
           : defaultCycleForCreditCard(account.statement_close_day, account.payment_due_day, new Date())
@@ -371,41 +319,32 @@ export default function AccountDetailPage() {
 
   const shiftCycleBy = (direction: -1 | 1) => {
     setFilterTouched(true)
+    if (account?.type === 'credit_card' && account.statement_close_day) {
+      const ref = direction === -1
+        ? addDays(parseISO(filterFrom + 'T00:00:00'), -1)
+        : addDays(parseISO(filterTo + 'T00:00:00'), 1)
+      const target = creditCardCycleBoundaries(account.statement_close_day, ref)
+      const billIndex = billsAsc.findIndex(b => cycleEndForBill(b.due_date, account.statement_close_day) === target.end)
+      const range = billIndex >= 0
+        ? rangeForBill(billsAsc[billIndex], billIndex > 0 ? billsAsc[billIndex - 1] : null, account.statement_close_day)
+        : target
+      setFilterFrom(range.start)
+      setFilterTo(range.end)
+      return
+    }
     // Bill-aware nav: step through the bills list when we have it, so prev/next
     // mirrors the bank's actual statements (handles dynamic close days).
     if (billsAsc.length > 0) {
-      const currentIdx = activeBill
-        ? billsAsc.indexOf(activeBill)
-        : billsAsc.length // viewing in-progress cycle past the newest bill
+      const currentIdx = activeBill ? billsAsc.indexOf(activeBill) : billsAsc.length
       const newIdx = currentIdx + direction
       if (newIdx >= 0 && newIdx < billsAsc.length) {
         const next = billsAsc[newIdx]
         const prev = newIdx > 0 ? billsAsc[newIdx - 1] : null
-        const { start, end } = rangeForBill(next, prev)
-        setFilterFrom(start)
-        setFilterTo(end)
+        const range = rangeForBill(next, prev)
+        setFilterFrom(range.start)
+        setFilterTo(range.end)
         return
       }
-      // Stepping forward past the newest bill = the in-progress cycle.
-      // Use the full cycle-math range [prev_close, next_close-1] so a tx
-      // dated on the previous close (Brazilian convention: belongs to the
-      // NEXT cycle) shows up. The backend filters bill_id IS NULL in this
-      // path so already-billed txs don't double-count against the bar.
-      if (newIdx === billsAsc.length && account?.statement_close_day) {
-        const cm = creditCardCycleBoundaries(account.statement_close_day, new Date())
-        setFilterFrom(cm.start)
-        setFilterTo(cm.end)
-        return
-      }
-    }
-    if (account?.type === 'credit_card' && account?.statement_close_day) {
-      const ref = direction === -1
-        ? new Date(parseISO(filterFrom + 'T00:00:00').getTime() - 86400000)
-        : new Date(parseISO(filterTo + 'T00:00:00').getTime() + 86400000)
-      const { start, end } = creditCardCycleBoundaries(account.statement_close_day, ref)
-      setFilterFrom(start)
-      setFilterTo(end)
-      return
     }
     setFilterFrom(format(addMonths(parseISO(filterFrom + 'T00:00:00'), direction), 'yyyy-MM-dd'))
     setFilterTo(format(addMonths(parseISO(filterTo + 'T00:00:00'), direction), 'yyyy-MM-dd'))
@@ -423,16 +362,17 @@ export default function AccountDetailPage() {
     // For the in-progress cycle (no bill match), unbilled_only excludes
     // txs already linked to a closed bill (anti-double-count).
     queryKey: activeBill
-      ? ['accounts', id, 'summary', { bill_id: activeBill.id, from: filterFrom, to: filterTo }]
-      : ['accounts', id, 'summary', filterFrom, filterTo, { unbilled_only: isInProgressCycle }],
+      ? ['accounts', id, 'summary', { bill_id: activeBill.id, from: filterFrom, to: filterTo, bill_cycle_view: !!account?.statement_close_day }]
+      : ['accounts', id, 'summary', filterFrom, filterTo, { unbilled_only: isUnbilledCycle, bill_cycle_view: !!account?.statement_close_day }],
     queryFn: () => accounts.summary(
       id!,
       filterFrom || undefined,
       filterTo || undefined,
       activeBill?.id,
-      isInProgressCycle || undefined,
+      isUnbilledCycle || undefined,
+      account?.type === 'credit_card' && !!account.statement_close_day || undefined,
     ),
-    enabled: !!id,
+    enabled: !!id && !!account,
   })
 
   // Previous cycle (for the Total da fatura comparison subtitle).
@@ -443,39 +383,51 @@ export default function AccountDetailPage() {
     return creditCardCycleBoundaries(account.statement_close_day, dayBeforeStart)
   }, [account, filterFrom])
 
+  const previousBill = useMemo(() => {
+    if (!previousCycle || !account?.statement_close_day) return null
+    return billsAsc.find(bill => cycleEndForBill(bill.due_date, account.statement_close_day) === previousCycle.end) ?? null
+  }, [previousCycle, billsAsc, account])
+
   const { data: previousCycleSummary } = useQuery({
-    queryKey: ['accounts', id, 'summary', previousCycle?.start, previousCycle?.end],
-    queryFn: () => accounts.summary(id!, previousCycle!.start, previousCycle!.end),
+    queryKey: previousBill
+      ? ['accounts', id, 'summary', { bill_id: previousBill.id, from: previousCycle?.start, to: previousCycle?.end, bill_cycle_view: true }]
+      : ['accounts', id, 'summary', previousCycle?.start, previousCycle?.end, { unbilled_only: billsAsc.length > 0, bill_cycle_view: true }],
+    queryFn: () => accounts.summary(
+      id!, previousCycle!.start, previousCycle!.end, previousBill?.id,
+      !previousBill && billsAsc.length > 0 || undefined, true,
+    ),
     enabled: !!id && !!previousCycle,
   })
 
-  // Last 6 cycles (oldest → newest) for the bill timeline strip.
-  // When we have a bills feed (Pluggy Regulado, etc.) the strip is driven
-  // directly by bills — total comes from bill.total_amount, label from the
-  // bill's actual due_date — so the bars match the bank statement-for-statement
-  // even when the close day shifts month to month (issue #92). Otherwise we
-  // fall back to local cycle math.
+  // Last cycles for the bill timeline. Known bills keep their provider IDs;
+  // missing bills get a date-based cycle so no purchase interval disappears.
   const timelineCycles: { start: string; end: string; bill?: CreditCardBill }[] = useMemo(() => {
     if (!account || account.type !== 'credit_card') return []
 
     if (billsAsc.length > 0) {
       const cycles: { start: string; end: string; bill?: CreditCardBill }[] = []
+      if (account.statement_close_day) {
+        const closeDay = account.statement_close_day
+        const billByEnd = new Map<string, CreditCardBill>(
+          billsAsc.map((b): [string, CreditCardBill] => [cycleEndForBill(b.due_date, closeDay), b]),
+        )
+        const newestEnd = cycleEndForBill(billsAsc[billsAsc.length - 1].due_date, closeDay)
+        const today = format(new Date(), 'yyyy-MM-dd')
+        const through = today > newestEnd ? today : newestEnd
+        const oldestStart = rangeForBill(billsAsc[0], null, closeDay).start
+        let ref = parseISO(through + 'T00:00:00')
+        for (let i = 0; i < (isMobile ? 4 : 6); i++) {
+          const cycle = creditCardCycleBoundaries(closeDay, ref)
+          if (cycle.end < oldestStart) break
+          cycles.unshift({ ...cycle, bill: billByEnd.get(cycle.end) })
+          ref = addDays(parseISO(cycle.start + 'T00:00:00'), -1)
+        }
+        return cycles
+      }
       for (let i = 0; i < billsAsc.length; i++) {
         const b = billsAsc[i]
         const prev = i > 0 ? billsAsc[i - 1] : null
-        cycles.push({ ...rangeForBill(b, prev), bill: b })
-      }
-      // The current in-progress cycle (no bill yet) is ALWAYS a trailing
-      // bar when the account has any bills — charges accrue to the next
-      // bill the moment the previous one closes, regardless of whether
-      // its due date has passed. Skipping it hides the user's currently-
-      // accumulating spend from the strip until ~10 days into the cycle.
-      // Use the cycle-math range [prev_close, next_close-1] so a tx dated
-      // on the previous close (which belongs to the NEXT cycle per
-      // Brazilian convention) shows up. The backend's `bill_id IS NULL`
-      // filter prevents already-billed txs from leaking in.
-      if (account.statement_close_day) {
-        cycles.push(creditCardCycleBoundaries(account.statement_close_day, new Date()))
+        cycles.push({ ...rangeForBill(b, prev, account.statement_close_day), bill: b })
       }
       return cycles.slice(isMobile ? -4 : -6)
     }
@@ -493,41 +445,46 @@ export default function AccountDetailPage() {
 
   const timelineQueries = useQueries({
     queries: timelineCycles.map(c => ({
-      // Bill-anchored cycles send bill_id AND the cycle window so the
-      // backend includes both Pluggy-linked txs and any unlinked txs
-      // (manual / recurring) the user placed in this cycle. The trailing
-      // in-progress cycle (no bill) sets unbilled_only so prior-bill txs
-      // that fall in the window aren't double-counted in the bar.
+      // Known bills include linked and date-matched unlinked transactions.
+      // Missing bill cycles use their closing-date interval for unlinked rows.
       queryKey: c.bill
-        ? ['accounts', id, 'summary', { bill_id: c.bill.id, from: c.start, to: c.end }]
-        : ['accounts', id, 'summary', c.start, c.end, { unbilled_only: billsAsc.length > 0 }],
+        ? ['accounts', id, 'summary', { bill_id: c.bill.id, from: c.start, to: c.end, bill_cycle_view: !!account?.statement_close_day }]
+        : ['accounts', id, 'summary', c.start, c.end, { unbilled_only: billsAsc.length > 0, bill_cycle_view: !!account?.statement_close_day }],
       queryFn: () => accounts.summary(
         id!, c.start, c.end, c.bill?.id,
         c.bill ? undefined : (billsAsc.length > 0 || undefined),
+        !!account?.statement_close_day || undefined,
       ),
       enabled: !!id,
     })),
   })
 
   const { data: txData, isLoading: txLoading } = useQuery({
-    queryKey: ['transactions', { account_id: id, bill_id: activeBill?.id, from: filterFrom, to: filterTo, limit: 500, include_opening_balance: true, unbilled_only: isInProgressCycle }],
-    queryFn: () => transactions.list({
-      account_id: id,
-      // When the active cycle is a real bill, prefer bill_id (Pluggy's
-      // truth — picks up charges the bank rolled outside the nominal date
-      // range) AND keep from/to so manual / non-bill-linked txs (recurring
-      // fills, CSV imports) bucketed into this cycle still show up.
-      bill_id: activeBill?.id,
-      // For the in-progress cycle (CC has bills, but no bill matches the
-      // current view), exclude already-billed txs so the bar/list only
-      // shows what's accumulating toward the next bill.
-      unbilled_only: isInProgressCycle || undefined,
-      from: filterFrom || undefined,
-      to: filterTo || undefined,
-      limit: 500,
-      include_opening_balance: true,
-    }),
-    enabled: !!id,
+    queryKey: ['transactions', { account_id: id, bill_id: activeBill?.id, from: filterFrom, to: filterTo, limit: 500, include_opening_balance: true, unbilled_only: isUnbilledCycle, bill_cycle_view: account?.type === 'credit_card' && !!account.statement_close_day, include_summary: false, all_pages: account?.type === 'credit_card' }],
+    queryFn: async ({ signal }) => {
+      const params = {
+        account_id: id,
+        // Linked purchases belong to their provider bill. Unlinked purchases
+        // are selected by their purchase date within the closing-date window.
+        bill_id: activeBill?.id,
+        unbilled_only: isUnbilledCycle || undefined,
+        bill_cycle_view: account?.type === 'credit_card' && !!account.statement_close_day || undefined,
+        from: filterFrom || undefined,
+        to: filterTo || undefined,
+        limit: 500,
+        include_opening_balance: true,
+        include_summary: false,
+      }
+      const firstPage = await transactions.list(params, signal)
+      const items = [...firstPage.items]
+      for (let page = 2; account?.type === 'credit_card' && items.length < firstPage.total; page++) {
+        const nextPage = await transactions.list({ ...params, page }, signal)
+        if (nextPage.items.length === 0) break
+        items.push(...nextPage.items)
+      }
+      return { ...firstPage, items }
+    },
+    enabled: !!id && !!account,
   })
 
   // Non-materialized recurring projections are forecast rows. They are kept
@@ -721,16 +678,15 @@ export default function AccountDetailPage() {
         byDay.set(tx.date, (byDay.get(tx.date) ?? 0) + amt)
       }
       // Chart span: when a real bill is active, derive the range from the
-      // actual debit dates so charges Pluggy bucketed outside our nominal
-      // [prev_due+1, this_due] window (e.g. a 03/02 charge rolled into the
-      // March bill) still show up. Otherwise use the cycle-math range.
+      // actual debit dates as well as the closing-day window, so charges
+      // linked by the provider outside that window still show up.
       let rangeStart: string | null = null
       let rangeEnd: string | null = null
       if (activeBill) {
         const dates = Array.from(byDay.keys()).sort()
         if (dates.length === 0) return []
-        rangeStart = dates[0]
-        rangeEnd = activeBill.due_date < dates[dates.length - 1] ? dates[dates.length - 1] : activeBill.due_date
+        rangeStart = filterFrom && filterFrom < dates[0] ? filterFrom : dates[0]
+        rangeEnd = filterTo && filterTo > dates[dates.length - 1] ? filterTo : dates[dates.length - 1]
       } else if (filterFrom && filterTo) {
         rangeStart = filterFrom
         rangeEnd = filterTo
@@ -825,7 +781,17 @@ export default function AccountDetailPage() {
   const hasProjectedExpenses = Math.abs(projectedExpenses - actualExpenses) > 0.005
 
   const resolvedDefaultRange = account?.type === 'credit_card'
-    ? defaultCycleForCreditCard(account.statement_close_day, account.payment_due_day, new Date())
+    ? (() => {
+        const today = format(new Date(), 'yyyy-MM-dd')
+        const upcomingIndex = billsAsc.findIndex(b => b.due_date >= today)
+        if (upcomingIndex >= 0) {
+          return rangeForBill(billsAsc[upcomingIndex], upcomingIndex > 0 ? billsAsc[upcomingIndex - 1] : null, account.statement_close_day)
+        }
+        if (billsAsc.length > 0 && account.statement_close_day) {
+          return creditCardCycleBoundaries(account.statement_close_day, new Date())
+        }
+        return defaultCycleForCreditCard(account.statement_close_day, account.payment_due_day, new Date())
+      })()
     : { start: defaultFrom(), end: defaultTo() }
   const hasFilters = filterFrom !== resolvedDefaultRange.start || filterTo !== resolvedDefaultRange.end
 
@@ -1027,13 +993,8 @@ export default function AccountDetailPage() {
               onClick={() => {
                 setFilterTouched(false)
                 if (account?.type === 'credit_card') {
-                  const { start, end } = defaultCycleForCreditCard(
-                    account.statement_close_day,
-                    account.payment_due_day,
-                    new Date(),
-                  )
-                  setFilterFrom(start)
-                  setFilterTo(end)
+                  setFilterFrom(resolvedDefaultRange.start)
+                  setFilterTo(resolvedDefaultRange.end)
                 } else {
                   setFilterFrom(defaultFrom())
                   setFilterTo(defaultTo())
@@ -1176,31 +1137,13 @@ export default function AccountDetailPage() {
           : dueIn != null && dueIn <= 3 ? 'text-rose-500'
           : dueIn != null && dueIn <= 7 ? 'text-amber-600'
           : 'text-muted-foreground'
-        // Cycle-over-cycle comparison: any time we have a previous cycle to
-        // compare against. A current bill of 0 is still meaningful (shows -100%
-        // and tells the user "nothing spent yet vs last month").
-        // Cycle-over-cycle comparison. When we have a previous bill, use ITS
-        // total_amount as the prev (stable bank snapshot — the date-range
-        // summary endpoint can't bucket linked txs by bill_id and ends up
-        // mismatched). Falls back to summary for the cycle-math case.
-        let prevLabelBill: CreditCardBill | null = null
-        if (activeBill) {
-          const idx = billsAsc.indexOf(activeBill)
-          prevLabelBill = idx > 0 ? billsAsc[idx - 1] : null
-        } else if (billsAsc.length > 0) {
-          const newest = billsAsc[billsAsc.length - 1]
-          const today = format(new Date(), 'yyyy-MM-dd')
-          if (newest.due_date < today) {
-            prevLabelBill = newest
-          }
-        }
-        const prevTotal = prevLabelBill
-          ? Number(prevLabelBill.total_amount)
-          : previousCycleSummary?.monthly_expenses ?? 0
-        const showComparison = (prevLabelBill || previousCycle) && prevTotal > 0
+        // Compare adjacent cycles with the same linked/unlinked rule and currency.
+        const prevTotal = (showPrimary ? previousCycleSummary?.projected_expenses_primary : undefined)
+          ?? previousCycleSummary?.projected_expenses ?? previousCycleSummary?.monthly_expenses ?? 0
+        const showComparison = previousCycle && prevTotal > 0
         const deltaPct = showComparison ? ((billTotal - prevTotal) / prevTotal) * 100 : null
-        const prevCycleLabel = prevLabelBill
-          ? format(parseISO(prevLabelBill.due_date + 'T00:00:00'), 'MMM yyyy', {
+        const prevCycleLabel = previousBill
+          ? format(parseISO(previousBill.due_date + 'T00:00:00'), 'MMM yyyy', {
               locale: resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language),
             })
           : previousCycle
@@ -1380,7 +1323,7 @@ export default function AccountDetailPage() {
                 {/* Closing date. For bill-driven cycles we derive it from the
                     bill's due_date + account.statement_close_day (handles
                     dynamic close days). For cycle-math cycles, filterTo is
-                    the day before the close, so close = filterTo + 1. */}
+                    the day before closing. */}
                 <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-0.5">
                   {t('accounts.statementCloseDay')}
                 </p>
