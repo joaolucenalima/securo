@@ -120,19 +120,31 @@ beforeEach(() => {
   api.payees.list.mockResolvedValue([])
 })
 
-describe('Dashboard net worth breakdown', () => {
-  it('counts a shared credit line once in the credit card total', async () => {
+describe('Dashboard monthly result', () => {
+  it('uses the viewer share for a future month without changing projected expenses', async () => {
+    const nextMonth = new Date()
+    nextMonth.setMonth(nextMonth.getMonth() + 1)
+    const month = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
+    api.dashboard.summary.mockResolvedValue({
+      ...summary,
+      projected_income_primary: 20,
+      projected_expenses_primary: 311.83,
+      result_projected_income_primary: 20,
+      result_projected_expenses_primary: 40,
+    })
     const { user } = renderWithProviders(
       <TooltipProvider delayDuration={0}>
         <DashboardPage />
       </TooltipProvider>,
+      { route: `/?month=${month}` },
     )
 
-    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    await screen.findByText(formatCurrency(-20, 'USD', 'en-US'))
+    expect(screen.getByText(new RegExp(formatCurrency(311.83, 'USD', 'en-US').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))).toBeInTheDocument()
     await user.hover(screen.getByRole('button', { name: 'i' }))
 
     const tooltip = await screen.findByRole('tooltip')
-    const cardRow = within(tooltip).getByText(t('dashboard.creditCardBalance')).parentElement!
-    expect(cardRow).toHaveTextContent(formatCurrency(-500, 'USD', 'en-US'))
+    const expenseRow = within(tooltip).getByText(t('dashboard.projectedExpenses')).parentElement!
+    expect(expenseRow).toHaveTextContent(formatCurrency(40, 'USD', 'en-US'))
   })
 })

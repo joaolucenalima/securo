@@ -456,6 +456,130 @@ async def test_get_summary_excludes_pending_from_period_totals(
 
 
 @pytest.mark.asyncio
+async def test_future_summary_counts_pending_group_expense_at_viewer_share(
+    session: AsyncSession, test_user, test_workspace,
+):
+    from app.models.group import Group, GroupMember
+    from app.models.transaction_split import TransactionSplit
+
+    month = (date.today().replace(day=1) + timedelta(days=35)).replace(day=1)
+    account = await _make_account(session, test_user.id)
+    expense = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", month, status="pending",
+    )
+    other_only_expense = await _add_txn(
+        session, test_user.id, account.id, 211.83, "debit", month, status="pending",
+    )
+    foreign_expense = await _add_txn(
+        session, test_user.id, account.id, 10, "debit", month, status="pending",
+    )
+    foreign_expense.currency = "USD"
+    foreign_expense.amount_primary = Decimal("50")
+    foreign_expense.fx_rate_used = Decimal("5")
+    await _add_txn(session, test_user.id, account.id, 20, "credit", month, status="pending")
+    group = Group(user_id=test_user.id, workspace_id=test_workspace.id, name="Trip")
+    session.add(group)
+    await session.flush()
+    self_member = GroupMember(
+        group_id=group.id, workspace_id=test_workspace.id, name="Me", is_self=True,
+    )
+    other_member = GroupMember(
+        group_id=group.id, workspace_id=test_workspace.id, name="Other",
+    )
+    session.add_all([self_member, other_member])
+    await session.flush()
+    session.add_all([
+        TransactionSplit(
+            transaction_id=expense.id, workspace_id=test_workspace.id,
+            group_member_id=self_member.id, share_amount=Decimal("40"),
+        ),
+        TransactionSplit(
+            transaction_id=expense.id, workspace_id=test_workspace.id,
+            group_member_id=other_member.id, share_amount=Decimal("60"),
+        ),
+        TransactionSplit(
+            transaction_id=other_only_expense.id, workspace_id=test_workspace.id,
+            group_member_id=other_member.id, share_amount=Decimal("211.83"),
+        ),
+        TransactionSplit(
+            transaction_id=foreign_expense.id, workspace_id=test_workspace.id,
+            group_member_id=self_member.id, share_amount=Decimal("4"),
+        ),
+        TransactionSplit(
+            transaction_id=foreign_expense.id, workspace_id=test_workspace.id,
+            group_member_id=other_member.id, share_amount=Decimal("6"),
+        ),
+    ])
+    await session.commit()
+
+    for account_ids in (None, [account.id]):
+        summary = await get_summary(
+            session, test_workspace.id, test_user.id,
+            month=month, account_ids=account_ids,
+        )
+        assert summary.projected_income_primary == pytest.approx(20)
+        assert summary.projected_expenses_primary == pytest.approx(361.83)
+        assert summary.result_projected_income_primary == pytest.approx(20)
+        assert summary.result_projected_expenses_primary == pytest.approx(60)
+
+
+@pytest.mark.asyncio
+async def test_filtered_summary_counts_only_owner_share_of_posted_group_expense(
+    session: AsyncSession, test_user, test_workspace,
+):
+    from app.models.group import Group, GroupMember
+    from app.models.transaction_split import TransactionSplit
+
+    account = await _make_account(session, test_user.id)
+    expense = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", date.today(),
+    )
+    foreign_expense = await _add_txn(
+        session, test_user.id, account.id, 10, "debit", date.today(),
+    )
+    foreign_expense.currency = "USD"
+    foreign_expense.amount_primary = Decimal("50")
+    foreign_expense.fx_rate_used = Decimal("5")
+    group = Group(user_id=test_user.id, workspace_id=test_workspace.id, name="Trip")
+    session.add(group)
+    await session.flush()
+    self_member = GroupMember(
+        group_id=group.id, workspace_id=test_workspace.id, name="Me", is_self=True,
+    )
+    other_member = GroupMember(
+        group_id=group.id, workspace_id=test_workspace.id, name="Other",
+    )
+    session.add_all([self_member, other_member])
+    await session.flush()
+    session.add_all([
+        TransactionSplit(
+            transaction_id=expense.id, workspace_id=test_workspace.id,
+            group_member_id=self_member.id, share_amount=Decimal("40"),
+        ),
+        TransactionSplit(
+            transaction_id=expense.id, workspace_id=test_workspace.id,
+            group_member_id=other_member.id, share_amount=Decimal("60"),
+        ),
+        TransactionSplit(
+            transaction_id=foreign_expense.id, workspace_id=test_workspace.id,
+            group_member_id=self_member.id, share_amount=Decimal("4"),
+        ),
+        TransactionSplit(
+            transaction_id=foreign_expense.id, workspace_id=test_workspace.id,
+            group_member_id=other_member.id, share_amount=Decimal("6"),
+        ),
+    ])
+    await session.commit()
+
+    summary = await get_summary(
+        session, test_workspace.id, test_user.id,
+        month=date.today().replace(day=1), account_ids=[account.id],
+    )
+    assert summary.monthly_expenses_primary == pytest.approx(150)
+    assert summary.result_expenses_primary == pytest.approx(60)
+
+
+@pytest.mark.asyncio
 async def test_get_summary_pending_categorization(session: AsyncSession, test_user, test_workspace):
     """Summary counts uncategorized transactions."""
     account = await _make_account(session, test_user.id, "Pending Cat")

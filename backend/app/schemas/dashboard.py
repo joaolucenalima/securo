@@ -17,6 +17,10 @@ class DashboardSummary(BaseModel):
     projected_expenses: float = 0.0
     projected_income_primary: float = 0.0
     projected_expenses_primary: float = 0.0
+    result_income_primary: float = 0.0
+    result_expenses_primary: float = 0.0
+    result_projected_income_primary: float = 0.0
+    result_projected_expenses_primary: float = 0.0
     recurring_expenses_primary: float = 0.0
     accounts_count: int
     pending_categorization: int

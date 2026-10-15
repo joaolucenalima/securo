@@ -396,9 +396,13 @@ export default function DashboardPage() {
   // realised figure, so a month with nothing pending stays quiet.
   const projectedIncome = Number(summary?.projected_income_primary ?? summary?.projected_income ?? income)
   const projectedExpenses = Number(summary?.projected_expenses_primary ?? summary?.projected_expenses ?? expenses)
-  // Use the same visible recurrence rows shown for this month. The summary's
-  // projected expenses also include pending transactions, which do not belong
-  // in the monthly result.
+  const resultIncome = Number(summary?.result_income_primary ?? income)
+  const resultExpenses = Number(summary?.result_expenses_primary ?? expenses)
+  const resultProjectedIncome = Number(summary?.result_projected_income_primary ?? projectedIncome)
+  const resultProjectedExpenses = Number(summary?.result_projected_expenses_primary ?? projectedExpenses)
+  // Use the forecast totals for future months so pending and future-dated
+  // transactions contribute alongside virtual recurring occurrences.
+  // For current and past months, keep the existing realised-plus-recurring view.
   const recurringExpenses = (projectedTxs ?? []).reduce((sum, projection) => {
     if (projection.type !== 'debit') return sum
     if (activeAccountIds !== null && !activeAccountIds.includes(projection.account_id ?? '')) return sum
@@ -408,7 +412,9 @@ export default function DashboardPage() {
       projection.currency === primaryCurrency ? projection.amount : 0
     ))
   }, 0)
-  const monthlyResult = income - expenses - recurringExpenses + (includeCdbForCurrentMonth ? cdbValue : 0)
+  const monthlyResult = selectedMonth > currentMonth()
+    ? resultProjectedIncome - resultProjectedExpenses
+    : resultIncome - resultExpenses - recurringExpenses + (includeCdbForCurrentMonth ? cdbValue : 0)
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
   const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
   const daysInMonth = monthLastDay(selectedMonth)
@@ -774,8 +780,36 @@ export default function DashboardPage() {
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center gap-1">
               {t('dashboard.monthlyResult')}
               <Tooltip>
-                <TooltipTrigger asChild><button type="button" className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-muted text-muted-foreground text-[9px] font-bold">i</button></TooltipTrigger>
-                <TooltipContent>{t('dashboard.monthlyResultTooltip')}</TooltipContent>
+                <TooltipTrigger asChild>
+                  <button type="button" className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-muted text-muted-foreground hover:bg-primary hover:text-primary-foreground transition-colors text-[9px] font-bold leading-none">i</button>
+                </TooltipTrigger>
+                <TooltipContent className="w-64">
+                  <p>{t('dashboard.monthlyResultBreakdown')}</p>
+                  {!summaryLoading && !projectedTxLoading && (!includeCdbForCurrentMonth || !assetsLoading) && (
+                    <div className="mt-1.5 space-y-0.5 border-t border-background/20 pt-1.5">
+                      <div className="flex justify-between gap-3">
+                        <span>{t(selectedMonth > currentMonth() ? 'dashboard.projectedIncome' : 'dashboard.monthlyIncome')}</span>
+                        <span className="tabular-nums">{mask(formatCurrency(selectedMonth > currentMonth() ? resultProjectedIncome : resultIncome, primaryCurrency, locale))}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span>{t(selectedMonth > currentMonth() ? 'dashboard.projectedExpenses' : 'dashboard.monthlyExpenses')}</span>
+                        <span className="tabular-nums">-{mask(formatCurrency(selectedMonth > currentMonth() ? resultProjectedExpenses : resultExpenses, primaryCurrency, locale))}</span>
+                      </div>
+                      {selectedMonth <= currentMonth() && recurringExpenses > 0 && (
+                        <div className="flex justify-between gap-3">
+                          <span>{t('dashboard.recurringExpenses')}</span>
+                          <span className="tabular-nums">-{mask(formatCurrency(recurringExpenses, primaryCurrency, locale))}</span>
+                        </div>
+                      )}
+                      {includeCdbForCurrentMonth && (
+                        <div className="flex justify-between gap-3">
+                          <span>{t('dashboard.monthlyResultCdb')}</span>
+                          <span className="tabular-nums">{mask(formatCurrency(cdbValue, primaryCurrency, locale))}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </TooltipContent>
               </Tooltip>
             </p>
             {summaryLoading || projectedTxLoading || (includeCdbForCurrentMonth && assetsLoading) ? <Skeleton className="h-6 w-24" /> : (

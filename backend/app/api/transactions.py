@@ -454,6 +454,7 @@ async def get_transaction(
     transaction = await transaction_service.get_transaction(session, transaction_id, ctx.workspace.id)
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    await transaction_service._tag_shared_view(session, [transaction], ctx.user_id)
     primary_currency = ctx.user.primary_currency
     return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
 

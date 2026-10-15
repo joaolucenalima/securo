@@ -822,6 +822,8 @@
     "availableBalance": "Saldo disponível em contas",
     "monthlyResult": "Resultado do mês",
     "monthlyResultTooltip": "Entradas do mês menos saídas do mês e recorrências previstas. Usa os valores exibidos acima, sem incluir saídas previstas. Ao ativar a opção, soma o valor dos CDBs.",
+    "monthlyResultBreakdown": "Entradas menos saídas. Meses futuros incluem transações pendentes e recorrências previstas; meses atuais e passados incluem as recorrências restantes.",
+    "monthlyResultCdb": "CDBs",
     "recurringExpenses": "Recorrências previstas",
     "includeCdb": "Incluir CDBs no saldo e no resultado",
     "includedCdb": "CDBs incluídos",

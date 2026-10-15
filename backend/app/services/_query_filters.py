@@ -258,6 +258,7 @@ async def owner_split_offset_pnl(
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
     workspace_id: Optional[uuid.UUID] = None,
+    account_ids: Optional[list[uuid.UUID]] = None,
 ) -> tuple[float, float]:
     """Return (income_offset, expense_offset) — the totals to *subtract*
     from the owner's full-amount aggregations so only their own share
@@ -287,7 +288,10 @@ async def owner_split_offset_pnl(
 
     result = await session.execute(
         select(
+            Transaction.id,
             Transaction.currency,
+            Transaction.amount,
+            Transaction.amount_primary,
             func.sum(
                 case(
                     (Transaction.type == "credit", TransactionSplit.share_amount),
@@ -304,6 +308,7 @@ async def owner_split_offset_pnl(
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .where(
             Transaction.user_id == user_id,
+            *([Transaction.account_id.in_(account_ids)] if account_ids is not None else []),
             *(
                 [Transaction.workspace_id == workspace_id]
                 if workspace_id is not None
@@ -317,15 +322,15 @@ async def owner_split_offset_pnl(
             Transaction.status == "posted",
             counts_as_user_pnl(),
         )
-        .group_by(Transaction.currency)
+        .group_by(Transaction.id, Transaction.currency, Transaction.amount, Transaction.amount_primary)
     )
 
     if primary_currency is None:
         income_total = 0.0
         expense_total = 0.0
         for row in result.all():
-            income_total += float(row[1] or 0)
-            expense_total += float(row[2] or 0)
+            income_total += float(row[4] or 0)
+            expense_total += float(row[5] or 0)
         return income_total, expense_total
 
     from decimal import Decimal as _Decimal
@@ -335,12 +340,22 @@ async def owner_split_offset_pnl(
     income_total = 0.0
     expense_total = 0.0
     for row in result.all():
-        cur, inc_raw, exp_raw = row[0], row[1] or 0, row[2] or 0
+        _, cur, amount, amount_primary, inc_raw, exp_raw = row
+        stamped_rate = (
+            _Decimal(str(amount_primary)) / _Decimal(str(amount))
+            if amount_primary is not None and amount else None
+        )
         if inc_raw:
-            inc_pri, _ = await _convert(session, _Decimal(str(inc_raw)), cur, primary_currency)
+            if stamped_rate is not None:
+                inc_pri = (_Decimal(str(inc_raw)) * stamped_rate).quantize(_Decimal("0.01"))
+            else:
+                inc_pri, _ = await _convert(session, _Decimal(str(inc_raw)), cur, primary_currency)
             income_total += float(inc_pri)
         if exp_raw:
-            exp_pri, _ = await _convert(session, _Decimal(str(exp_raw)), cur, primary_currency)
+            if stamped_rate is not None:
+                exp_pri = (_Decimal(str(exp_raw)) * stamped_rate).quantize(_Decimal("0.01"))
+            else:
+                exp_pri, _ = await _convert(session, _Decimal(str(exp_raw)), cur, primary_currency)
             expense_total += float(exp_pri)
     return income_total, expense_total
 
