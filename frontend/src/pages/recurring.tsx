@@ -20,7 +20,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import type { Category, CategoryGroup, RecurringTransaction } from '@/types'
-import { Pencil, Trash2, Plus, RefreshCw, Info } from 'lucide-react'
+import { Pencil, Trash2, Plus, RefreshCw, Info, ArrowUp, ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { CategorySelect } from '@/components/category-select'
@@ -31,6 +31,7 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
 
 const TH = 'text-xs font-medium text-muted-foreground py-3'
+type RecurringSortKey = 'description' | 'amount' | 'next_occurrence' | 'status'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return (
@@ -72,11 +73,65 @@ function RecurringTab() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<RecurringTransaction | null>(null)
   const [deletingRecurring, setDeletingRecurring] = useState<RecurringTransaction | null>(null)
+  const [sort, setSort] = useState<{ key: RecurringSortKey; direction: 'asc' | 'desc' }>({ key: 'next_occurrence', direction: 'asc' })
 
   const { data: recurringList } = useQuery({
     queryKey: ['recurring'],
     queryFn: recurringApi.list,
   })
+
+  const sortedRecurring = useMemo(() => {
+    if (!recurringList) return []
+    const collator = new Intl.Collator(locale, { sensitivity: 'base', numeric: true })
+    return [...recurringList].sort((a, b) => {
+      let result = 0
+      switch (sort.key) {
+        case 'description':
+          result = collator.compare(a.description, b.description)
+          break
+        case 'amount':
+          result = (a.type === 'credit' ? 1 : -1) * Number(a.amount)
+            - (b.type === 'credit' ? 1 : -1) * Number(b.amount)
+          break
+        case 'next_occurrence':
+          result = a.next_occurrence.localeCompare(b.next_occurrence)
+          break
+        case 'status':
+          result = Number(a.is_active) - Number(b.is_active)
+          break
+      }
+      return (sort.direction === 'asc' ? result : -result) || a.id.localeCompare(b.id)
+    })
+  }, [recurringList, locale, sort])
+
+  const summary = useMemo(() => (recurringList ?? []).reduce((totals, rt) => {
+    const amount = rt.currency === userCurrency ? Number(rt.amount) : rt.amount_primary
+    if (amount == null) {
+      totals.excluded += 1
+    } else if (rt.type === 'credit') {
+      totals.receivable += Number(amount)
+    } else {
+      totals.payable += Number(amount)
+    }
+    return totals
+  }, { receivable: 0, payable: 0, excluded: 0 }), [recurringList, userCurrency])
+  const net = summary.receivable - summary.payable
+
+  const sortHeader = (key: RecurringSortKey, label: string) => (
+    <button
+      type="button"
+      onClick={() => setSort(current => ({
+        key,
+        direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+      }))}
+      className="inline-flex cursor-pointer items-center gap-1 hover:text-foreground"
+    >
+      {label}
+      {sort.key === key && (sort.direction === 'asc'
+        ? <ArrowUp size={12} aria-hidden="true" />
+        : <ArrowDown size={12} aria-hidden="true" />)}
+    </button>
+  )
 
   const { data: categoriesList } = useQuery({
     queryKey: ['categories'],
@@ -184,19 +239,20 @@ function RecurringTab() {
           }
         />
         {recurringList && recurringList.length > 0 ? (
+          <>
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('recurring.description')}</th>
-                <th className={`${TH} text-left w-36`}>{t('recurring.amount')}</th>
+                <th className={`${TH} pl-4 sm:pl-5 text-left`} aria-sort={sort.key === 'description' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>{sortHeader('description', t('recurring.description'))}</th>
+                <th className={`${TH} text-left w-36`} aria-sort={sort.key === 'amount' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>{sortHeader('amount', t('recurring.amount'))}</th>
                 <th className={`${TH} text-left w-28 hidden md:table-cell`}>{t('recurring.frequency')}</th>
-                <th className={`${TH} text-left w-32 hidden md:table-cell`}>{t('recurring.nextOccurrence')}</th>
-                <th className={`${TH} text-left w-24 hidden sm:table-cell`}>{t('recurring.status')}</th>
+                <th className={`${TH} text-left w-32 hidden md:table-cell`} aria-sort={sort.key === 'next_occurrence' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>{sortHeader('next_occurrence', t('recurring.nextOccurrence'))}</th>
+                <th className={`${TH} text-left w-24 hidden sm:table-cell`} aria-sort={sort.key === 'status' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>{sortHeader('status', t('recurring.status'))}</th>
                 {canWrite && <th className={`${TH} pr-4 sm:pr-5 text-right w-24`}>{t('recurring.actions')}</th>}
               </tr>
             </thead>
             <tbody>
-              {recurringList.map((rt) => (
+              {sortedRecurring.map((rt) => (
                 <tr key={rt.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors">
                   <td className="py-3 pl-4 sm:pl-5 text-sm font-medium text-foreground">{rt.description}</td>
                   <td className={`py-3 text-xs sm:text-sm font-bold tabular-nums ${rt.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
@@ -255,6 +311,28 @@ function RecurringTab() {
               ))}
             </tbody>
           </table>
+          <div className="flex flex-col gap-y-1 border-t border-border bg-muted/30 px-4 py-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-x-5">
+            {summary.excluded > 0 && (
+              <span className="text-xs text-muted-foreground sm:mr-auto">
+                {t('transactions.summaryExcluded')}: {summary.excluded}
+              </span>
+            )}
+            <div className="flex items-baseline justify-between gap-1.5 text-xs sm:justify-start">
+              <span className="text-muted-foreground">{t('invoices.direction.receivable')}</span>
+              <span className="text-sm font-semibold tabular-nums text-emerald-600">{mask(formatCurrency(summary.receivable, userCurrency, locale))}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-1.5 text-xs sm:justify-start">
+              <span className="text-muted-foreground">{t('invoices.direction.payable')}</span>
+              <span className="text-sm font-semibold tabular-nums text-rose-500">{mask(formatCurrency(summary.payable, userCurrency, locale))}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-1.5 text-xs sm:justify-start">
+              <span className="text-muted-foreground">{t('invoices.label.total')}</span>
+              <span className={cn('text-sm font-bold tabular-nums', net >= 0 ? 'text-emerald-600' : 'text-rose-500')}>
+                {mask(formatCurrency(net, userCurrency, locale))}
+              </span>
+            </div>
+          </div>
+          </>
         ) : (
           <p className="text-sm text-muted-foreground text-center py-10">{t('recurring.empty')}</p>
         )}
