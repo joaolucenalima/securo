@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import CursorResult, delete, select, func, or_, not_, update
+from sqlalchemy import CursorResult, and_, delete, select, func, or_, not_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -120,6 +120,7 @@ async def get_transactions(
     bill_id: Optional[uuid.UUID] = None,
     group_id: Optional[uuid.UUID] = None,
     unbilled_only: bool = False,
+    bill_cycle_view: bool = False,
     sort_by: Optional[str] = None,
     sort_dir: str = "desc",
     transaction_ids: Optional[list[uuid.UUID]] = None,
@@ -166,13 +167,13 @@ async def get_transactions(
     # independent of the user's cash/accrual reporting preference. Without
     # this carve-out, accrual mode would hide a 4/30 charge whose
     # effective_date points at the next bill's due date because the cycle
-    # window [prev_close, this_close-1] doesn't contain the future
+    # closing-day window doesn't contain the future
     # effective_date (issue #92, abdalanervoso's accrual case).
-    bill_view_date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.date,
+    bill_view_date_col = (
+        Transaction.date if bill_cycle_view else
+        func.coalesce(Transaction.effective_bill_date, Transaction.date)
     )
-    in_bill_view = bill_id is not None or unbilled_only
+    in_bill_view = bill_id is not None or unbilled_only or bill_cycle_view
     filter_date_col = bill_view_date_col if in_bill_view else date_col
     # Base query: user's own transactions (manual or via account), or
     # group-scoped when `group_id` resolves to a visible group.
@@ -306,50 +307,43 @@ async def get_transactions(
     # Without bill_id (cycle-math cycles or non-CC), apply the date window
     # straight to all txs.
     if bill_id is not None:
-        from app.models.credit_card_bill import CreditCardBill  # local — avoid cycle
-        bill_predicates = [Transaction.bill_id == bill_id]
-        if from_date or to_date:
-            from sqlalchemy import and_ as _and, not_ as _not
-            # Resolve the active bill's due_date once so we can trust
-            # cycle-math classification when Pluggy hasn't tagged a tx yet.
-            active_due_subq = (
-                select(CreditCardBill.due_date)
-                .where(CreditCardBill.id == bill_id)
-                .scalar_subquery()
-            )
-            unlinked_clauses = [
-                Transaction.bill_id.is_(None),
-                # Sync-pending txs without a billId are normally deferred
-                # (provider hasn't classified them) — but if our cycle-math
-                # `apply_effective_date` already pre-classified them to THIS
-                # bill's due_date, trust it and include them. That's the
-                # in-progress case: pending charges the user can already see
-                # in their bank app, classified by close-date math we
-                # computed at sync time. Past closed bills aren't affected
-                # because pending txs there have effective_date pointing
-                # forward to a later bill (ingrid's case stays clean).
-                # Issue #92, abdalanervoso's empty-May.
-                #
-                # Manual override (effective_bill_date) bypasses the
-                # exclusion entirely: the user has hand-corrected the
-                # bucketing and that signal beats both cycle-math
-                # classification and sync-pending caution. Without this
-                # carve-out, a pending tx whose override doesn't snap to
-                # an existing bill's due_date (so bill_id stays null)
-                # gets filtered out of every closed-bill view (issue #162).
-                _not(_and(
-                    Transaction.source == "sync",
-                    Transaction.status == "pending",
-                    Transaction.effective_bill_date.is_(None),
-                    Transaction.effective_date != active_due_subq,
-                )),
-            ]
-            if from_date:
-                unlinked_clauses.append(filter_date_col >= from_date)
-            if to_date:
-                unlinked_clauses.append(filter_date_col <= to_date)
-            bill_predicates.append(_and(*unlinked_clauses))
-        base_query = base_query.where(or_(*bill_predicates))
+        if bill_cycle_view:
+            bill_predicates = [Transaction.bill_id == bill_id]
+            if from_date or to_date:
+                unlinked_window = [Transaction.bill_id.is_(None)]
+                if from_date:
+                    unlinked_window.append(Transaction.date >= from_date)
+                if to_date:
+                    unlinked_window.append(Transaction.date <= to_date)
+                bill_predicates.append(and_(*unlinked_window))
+            base_query = base_query.where(or_(*bill_predicates))
+        else:
+            from app.models.credit_card_bill import CreditCardBill  # local — avoid cycle
+            bill_predicates = [Transaction.bill_id == bill_id]
+            if from_date or to_date:
+                from sqlalchemy import and_ as _and, not_ as _not
+                # Resolve the active bill's due_date once so we can trust
+                # cycle-math classification when Pluggy hasn't tagged a tx yet.
+                active_due_subq = (
+                    select(CreditCardBill.due_date)
+                    .where(CreditCardBill.id == bill_id)
+                    .scalar_subquery()
+                )
+                unlinked_clauses = [
+                    Transaction.bill_id.is_(None),
+                    _not(_and(
+                        Transaction.source == "sync",
+                        Transaction.status == "pending",
+                        Transaction.effective_bill_date.is_(None),
+                        Transaction.effective_date != active_due_subq,
+                    )),
+                ]
+                if from_date:
+                    unlinked_clauses.append(filter_date_col >= from_date)
+                if to_date:
+                    unlinked_clauses.append(filter_date_col <= to_date)
+                bill_predicates.append(_and(*unlinked_clauses))
+            base_query = base_query.where(or_(*bill_predicates))
     else:
         # Cycle-math fallback (no bill_id was passed). The opt-in
         # `unbilled_only` flag is for callers that need the in-progress
@@ -367,7 +361,7 @@ async def get_transactions(
         # the in-progress cycle so the tx stays visible until a real bill
         # eventually anchors it. Limited to `unbilled_only` so the global
         # /transactions list isn't reshaped by the same rule.
-        if unbilled_only and to_date is not None:
+        if unbilled_only and to_date is not None and not bill_cycle_view:
             from sqlalchemy import and_ as _and
             window_clauses = []
             if from_date:
@@ -499,6 +493,10 @@ async def get_transactions(
         # Always tie-break on date desc + created_at desc so equal values
         # stay in a sensible order (e.g. multiple txs with the same amount).
         query = base_query.order_by(direction, default_order_col.desc(), Transaction.created_at.desc())
+    if bill_cycle_view:
+        # A stable final key prevents overlapping pages for imported rows with
+        # the same purchase date and creation timestamp.
+        query = query.order_by(Transaction.id.desc())
     if not skip_pagination:
         query = query.offset((page - 1) * limit).limit(limit)
 
