@@ -1735,7 +1735,8 @@
       "invalid_date": "Formato de data inválido",
       "no_amount": "Nenhum valor de entrada ou saída",
       "invalid_amount": "Formato de valor inválido"
-    }
+    },
+    "selectAll": "Selecionar todos"
   },
   "assetImport": {
     "title": "Importar ordens de investimento",
@@ -1955,6 +1956,9 @@
     "inflowOutflow": "Entradas vs Saídas",
     "startingBalance": "Saldo Atual",
     "endingBalance": "Saldo Projetado",
+    "runwayNegativeOn": "O saldo fica negativo em {{date}}",
+    "runwayAlreadyNegative": "Já está negativo",
+    "lowestBalance": "Menor saldo",
     "projectedIncome": "Receita Projetada",
     "projectedExpenses": "Despesa Projetada",
     "incomeExpenses": "Receitas vs Despesas",
@@ -2084,6 +2088,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2158,6 +2163,8 @@
     "remove": "Remover"
   },
   "splitGroups": {
+    "searchPlaceholder": "Buscar grupos...",
+    "clearSearch": "Limpar busca",
     "title": "Grupos",
     "section": "Configuração",
     "add": "Adicionar grupo",

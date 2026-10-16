@@ -1731,7 +1731,8 @@
       "invalid_date": "Invalid Date Format",
       "no_amount": "No Inflow or Outflow Amount",
       "invalid_amount": "Invalid Amount Format"
-    }
+    },
+    "selectAll": "Select all"
   },
   "assetImport": {
     "title": "Import investment orders",
@@ -1951,6 +1952,9 @@
     "inflowOutflow": "Inflow vs Outflow",
     "startingBalance": "Starting Balance",
     "endingBalance": "Projected Balance",
+    "runwayNegativeOn": "Balance goes negative on {{date}}",
+    "runwayAlreadyNegative": "Already negative",
+    "lowestBalance": "Lowest balance",
     "projectedIncome": "Projected Income",
     "projectedExpenses": "Projected Expenses",
     "incomeExpenses": "Income vs Expenses",
@@ -2080,6 +2084,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2154,6 +2159,8 @@
     "remove": "Remove"
   },
   "splitGroups": {
+    "searchPlaceholder": "Search groups...",
+    "clearSearch": "Clear search",
     "title": "Groups",
     "section": "Setup",
     "add": "Add group",
