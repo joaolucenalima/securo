@@ -496,13 +496,12 @@ async def get_transactions(
         )
     else:
         direction = (chosen_col.asc() if sort_dir == "asc" else chosen_col.desc())
-        # Always tie-break on date desc + created_at desc so equal values
-        # stay in a sensible order (e.g. multiple txs with the same amount).
-        query = base_query.order_by(direction, default_order_col.desc(), Transaction.created_at.desc())
-    if bill_cycle_view:
-        # A stable final key prevents overlapping pages for imported rows with
-        # the same purchase date and creation timestamp.
-        query = query.order_by(Transaction.id.desc())
+        # A unique final key keeps pages stable when the sort value, date,
+        # and creation timestamp all match (as in a bank sync batch).
+        query = base_query.order_by(
+            direction, default_order_col.desc(), Transaction.created_at.desc(),
+            Transaction.id.desc(),
+        )
     if not skip_pagination:
         query = query.offset((page - 1) * limit).limit(limit)
 

@@ -39,7 +39,8 @@ vi.mock('@/contexts/auth-context', () => ({
     },
   }),
 }))
-vi.mock('@/contexts/workspace-context', () => ({
+vi.mock('@/contexts/workspace-context', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/contexts/workspace-context')>(),
   useWorkspace: () => ({
     current: state.workspace,
     workspaces: [state.workspace],
@@ -64,6 +65,7 @@ vi.mock('@/lib/api', () => ({
   },
   accounts: { list: async () => [] },
   workspaces: { create: vi.fn() },
+  timezones: { list: async () => ({ default: 'UTC', timezones: [] }) },
   info: { get: async () => ({ features: {} }) },
 }))
 vi.mock('@/lib/webauthn', () => ({

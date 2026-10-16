@@ -813,6 +813,13 @@
     "passkeyNeverUsed": "कभी नहीं"
   },
   "dashboard": {
+    "monthlyResult": "Monthly result",
+    "monthlyResultTooltip": "Monthly income minus monthly expenses and expected recurring expenses. Uses the amounts shown above, without projected expenses. Enabling the option adds the value of CDB holdings.",
+    "monthlyResultBreakdown": "Income minus expenses. Future months include pending transactions and recurring projections; current and past months include remaining recurring expenses.",
+    "monthlyResultCdb": "CDB holdings",
+    "recurringExpenses": "Expected recurrences",
+    "includeCdb": "Include CDB holdings in balance and result",
+    "includedCdb": "CDB holdings included",
     "title": "डैशबोर्ड",
     "greetingMorning": "सुप्रभात",
     "greetingAfternoon": "नमस्कार",
