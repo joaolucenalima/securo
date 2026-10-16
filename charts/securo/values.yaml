@@ -95,7 +95,7 @@ config:
 backend:
   replicaCount: 1
   image:
-    repository: ghcr.io/securo-finance/securo-backend
+    repository: ghcr.io/joaolucenalima/securo-backend
     tag: latest
     pullPolicy: IfNotPresent
   service:
@@ -114,7 +114,7 @@ frontend:
   backendUrl: ""
   replicaCount: 1
   image:
-    repository: ghcr.io/securo-finance/securo-frontend
+    repository: ghcr.io/joaolucenalima/securo-frontend
     tag: latest
     pullPolicy: IfNotPresent
   service:

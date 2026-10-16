@@ -479,8 +479,8 @@ export const accounts = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/accounts/${id}`)
   },
-  summary: async (id: string, from?: string, to?: string, billId?: string, unbilledOnly?: boolean): Promise<AccountSummary> => {
-    const { data } = await api.get(`/accounts/${id}/summary`, { params: { from, to, bill_id: billId, unbilled_only: unbilledOnly || undefined } })
+  summary: async (id: string, from?: string, to?: string, billId?: string, unbilledOnly?: boolean, billCycleView?: boolean): Promise<AccountSummary> => {
+    const { data } = await api.get(`/accounts/${id}/summary`, { params: { from, to, bill_id: billId, unbilled_only: unbilledOnly || undefined, bill_cycle_view: billCycleView || undefined } })
     return data
   },
   balanceHistory: async (id: string, from?: string, to?: string): Promise<{ date: string; balance: number; balance_primary?: number }[]> => {
@@ -517,10 +517,12 @@ export const transactions = {
     bill_id?: string
     group_id?: string
     unbilled_only?: boolean
+    bill_cycle_view?: boolean
     q?: string
     page?: number
     limit?: number
     include_opening_balance?: boolean
+    include_summary?: boolean
     exclude_transfers?: boolean
     user_pnl_only?: boolean
     exclude_ignored?: boolean
@@ -529,9 +531,10 @@ export const transactions = {
     max_amount?: number
     sort_by?: string
     sort_dir?: 'asc' | 'desc'
-  }): Promise<PaginatedTransactions> => {
+  }, signal?: AbortSignal): Promise<PaginatedTransactions> => {
     const { data } = await api.get('/transactions', {
       params,
+      signal,
       paramsSerializer: { indexes: null },
     })
     return data

@@ -912,6 +912,123 @@ class TestEffectiveBillDateFiltersList:
         )
 
     @pytest.mark.asyncio
+    async def test_bill_link_wins_and_unlinked_close_day_starts_next_window(
+        self, session, test_user, test_workspace, cc_account
+    ):
+        from app.models.credit_card_bill import CreditCardBill
+        from app.services.account_service import get_account_summary
+        from app.services.transaction_service import get_transactions
+
+        bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="closing-window", due_date=date(2026, 4, 16),
+            total_amount=Decimal("60"), currency="BRL",
+        )
+        session.add(bill)
+        await session.flush()
+        linked_outside = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 20), Decimal("10"), effective_date=date(2026, 4, 16),
+        )
+        linked_outside.bill_id = bill.id
+        before_close = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 10), Decimal("20"), effective_date=date(2026, 5, 16),
+        )
+        on_close = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 11), Decimal("30"), effective_date=date(2026, 5, 16),
+        )
+        await session.commit()
+
+        start, end = date(2026, 3, 11), date(2026, 4, 10)
+        txs, _, _ = await get_transactions(
+            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            bill_id=bill.id, from_date=start, to_date=end, bill_cycle_view=True,
+        )
+        ids = {tx.id for tx in txs}
+        assert linked_outside.id in ids
+        assert before_close.id in ids
+        assert on_close.id not in ids
+        summary = await get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=start, date_to=end, bill_id=bill.id, bill_cycle_view=True,
+        )
+        assert summary is not None
+        assert summary["monthly_expenses"] == 30
+
+        linked_only, _, _ = await get_transactions(
+            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            bill_id=bill.id, bill_cycle_view=True,
+        )
+        assert {tx.id for tx in linked_only} == {linked_outside.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("has_bill", [True, False])
+    async def test_pending_unlinked_purchase_on_adjusted_close_is_visible(
+        self, session, test_user, test_workspace, cc_account, has_bill
+    ):
+        from app.models.credit_card_bill import CreditCardBill
+        from app.services.account_service import get_account_summary
+        from app.services.transaction_service import get_transactions
+
+        cc_account.statement_close_day = 5
+        cc_account.payment_due_day = 12
+        bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="october-cycle", due_date=date(2026, 10, 12),
+            total_amount=Decimal("42"), currency="BRL",
+        ) if has_bill else None
+        if bill:
+            session.add(bill)
+            await session.flush()
+
+        purchase = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 9, 4), Decimal("42"),
+            effective_date=date(2026, 9, 12), source="sync",
+        )
+        purchase.status = "pending"
+        await session.commit()
+
+        # September 5 is Saturday: the adjusted close is Friday, September 4.
+        # The old effective date must not hide an unlinked purchase on that day.
+        rows, _, _ = await get_transactions(
+            session, test_workspace.id, test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 9, 4), to_date=date(2026, 10, 4),
+            accounting_mode="accrual", bill_id=bill.id if bill else None,
+            unbilled_only=not has_bill, bill_cycle_view=True,
+        )
+        assert purchase.id in {row.id for row in rows}
+        summary = await get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 9, 4), date_to=date(2026, 10, 4),
+            bill_id=bill.id if bill else None,
+            unbilled_only=not has_bill, bill_cycle_view=True,
+        )
+        assert summary is not None
+        assert summary["projected_expenses"] == 42
+
+    @pytest.mark.asyncio
+    async def test_cycle_view_without_bill_uses_purchase_date_in_accrual_mode(
+        self, session, test_user, test_workspace, cc_account
+    ):
+        from app.services.transaction_service import get_transactions
+
+        on_close = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 11), Decimal("20"), effective_date=date(2026, 5, 16),
+        )
+        await session.commit()
+        txs, _, _ = await get_transactions(
+            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            from_date=date(2026, 4, 11), to_date=date(2026, 5, 10),
+            accounting_mode="accrual", bill_cycle_view=True,
+        )
+        assert on_close.id in {tx.id for tx in txs}
+
+    @pytest.mark.asyncio
     async def test_pending_sync_included_when_effective_date_matches_active_bill(
         self, session, test_user, test_workspace, cc_account
     ):

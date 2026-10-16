@@ -119,6 +119,7 @@ async def list_transactions(
     bill_id: Optional[uuid.UUID] = Query(None, description="Filter by credit-card bill (issue #92); takes precedence over from/to"),
     group_id: Optional[uuid.UUID] = Query(None, description="Filter to transactions split through this group; widens visibility for linked members"),
     unbilled_only: bool = Query(False, description="Cycle-math fallback only: exclude txs already linked to any bill (used for in-progress CC cycles)"),
+    bill_cycle_view: bool = Query(False, description="Use purchase dates for unlinked transactions in a card's closing-date cycle"),
     q: Optional[str] = Query(None),
     uncategorized: bool = Query(False),
     type: Optional[str] = Query(None),
@@ -126,6 +127,7 @@ async def list_transactions(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=500),
     include_opening_balance: bool = Query(False),
+    include_summary: bool = Query(True, description="Include aggregate totals for the filtered transactions"),
     exclude_transfers: bool = Query(False),
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
@@ -153,11 +155,12 @@ async def list_transactions(
         bill_id=bill_id,
         group_id=group_id,
         unbilled_only=unbilled_only,
+        bill_cycle_view=bill_cycle_view,
         sort_by=sort_by,
         sort_dir=sort_dir,
         min_amount=min_amount,
         max_amount=max_amount,
-        include_summary=True,
+        include_summary=include_summary,
     )
     primary_currency = ctx.user.primary_currency
     items = [_tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency) for tx in transactions]
@@ -462,6 +465,7 @@ async def get_transaction(
     transaction = await transaction_service.get_transaction(session, transaction_id, ctx.workspace.id)
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    await transaction_service._tag_shared_view(session, [transaction], ctx.user_id)
     primary_currency = ctx.user.primary_currency
     return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
 

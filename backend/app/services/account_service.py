@@ -701,6 +701,7 @@ async def get_account_summary(
     date_from: Optional[_Date] = None, date_to: Optional[_Date] = None,
     bill_id: Optional[uuid.UUID] = None,
     unbilled_only: bool = False,
+    bill_cycle_view: bool = False,
 ) -> Optional[dict]:
     account = await get_account(session, account_id, workspace_id)
     if not account:
@@ -761,6 +762,7 @@ async def get_account_summary(
     # a tx belongs to via `effective_bill_date`. We honor that first so the
     # totals card and bar chart agree with the transactions list (issue #92).
     bucket_date = func.coalesce(Transaction.effective_bill_date, Transaction.date)
+    cycle_date = Transaction.date if bill_cycle_view else bucket_date
 
     # Bill-driven filter (issue #92): when the caller passes bill_id, include
     #   (a) txs linked to this bill via Pluggy's billId mapping, AND
@@ -779,6 +781,15 @@ async def get_account_summary(
 
     def _scope(query):
         if bill_id is not None:
+            if bill_cycle_view:
+                return query.where(or_(
+                    Transaction.bill_id == bill_id,
+                    _and(
+                        Transaction.bill_id.is_(None),
+                        Transaction.date >= date_from,
+                        Transaction.date <= date_to,
+                    ),
+                ))
             unlinked_in_window = _and(
                 Transaction.bill_id.is_(None),
                 # Defer sync-pending txs only when their effective_date does
@@ -807,6 +818,12 @@ async def get_account_summary(
         # txs so an in-progress cycle's bar/total doesn't double-count past-
         # bill txs whose date falls in the window (see get_transactions).
         if unbilled_only:
+            if bill_cycle_view:
+                return query.where(
+                    Transaction.bill_id.is_(None),
+                    Transaction.date >= date_from,
+                    Transaction.date <= date_to,
+                )
             # Forward-pointing override catch (issue #162): mirror
             # get_transactions so the in-progress cycle's totals include
             # txs whose manual override points past the cycle window.
@@ -824,7 +841,7 @@ async def get_account_summary(
                     future_override,
                 ),
             )
-        return query.where(bucket_date >= date_from, bucket_date <= date_to)
+        return query.where(cycle_date >= date_from, cycle_date <= date_to)
 
     # Which exclusions these totals answer to. A credit card's four summary
     # numbers are all bill-side — they describe what the bank put on the
@@ -843,7 +860,7 @@ async def get_account_summary(
             Transaction.account_id == account_id,
             Transaction.type == "credit",
             Transaction.source != "opening_balance",
-            bucket_date <= today,
+            cycle_date <= today,
             Transaction.status == "posted",
             summary_filter,
         ))
@@ -866,7 +883,7 @@ async def get_account_summary(
             _scope(select(func.coalesce(func.sum(signed_for_bill), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.source != "opening_balance",
-                bucket_date <= today,
+                cycle_date <= today,
                 Transaction.status == "posted",
                 summary_filter,
             ))
@@ -876,7 +893,7 @@ async def get_account_summary(
             _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.type == "debit",
-                bucket_date <= today,
+                cycle_date <= today,
                 Transaction.status == "posted",
                 summary_filter,
             ))
@@ -890,7 +907,7 @@ async def get_account_summary(
     # account-detail bill card.
     forecast_condition = or_(
         Transaction.status == "pending",
-        bucket_date > today,
+        cycle_date > today,
     )
     forecast_income_result = await session.execute(
         _scope(select(func.coalesce(func.sum(effective_amount), 0)).where(

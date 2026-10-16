@@ -88,7 +88,7 @@ function txCalls() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.setSystemTime(new Date('2026-09-08T12:00:00'))
+  vi.setSystemTime(new Date('2026-05-11T12:00:00'))
   api.accounts.get.mockResolvedValue(account)
   api.accounts.bills.mockResolvedValue(bills)
   api.accounts.list.mockResolvedValue([account])
@@ -111,6 +111,126 @@ async function renderPage() {
 }
 
 describe('credit card cycle window', () => {
+  it('loads an early pending purchase from the next page of the bill', async () => {
+    vi.setSystemTime(new Date('2026-10-03T12:00:00'))
+    api.accounts.get.mockResolvedValue({ ...account, statement_close_day: 5, payment_due_day: 12 })
+    api.accounts.bills.mockResolvedValue([
+      { ...bills[0], due_date: '2026-09-12' },
+      { ...bills[1], due_date: '2026-10-12' },
+    ])
+    const purchase = {
+      id: 'early-purchase', account_id: account.id, description: 'VALEDRIVER',
+      amount: 42, currency: 'BRL', date: '2026-09-04', type: 'debit',
+      source: 'sync', status: 'pending', bill_id: null, category: null,
+      splits: [], is_ignored: false,
+    }
+    api.transactions.list.mockImplementation(async ({ from, page }) => {
+      if (from !== '2026-09-04') return { items: [], total: 0 }
+      return {
+        items: page === 2 ? [purchase] : [{ ...purchase, id: 'recent', date: '2026-10-03', description: 'Recent purchase' }],
+        total: 2,
+      }
+    })
+
+    await renderPage()
+
+    expect(await screen.findByText('VALEDRIVER')).toBeInTheDocument()
+    expect(txCalls()).toContainEqual(expect.objectContaining({
+      page: 2, bill_id: 'bill-may', from: '2026-09-04', to: '2026-10-04',
+      bill_cycle_view: true, include_summary: false,
+    }))
+  })
+
+  it('uses the closing day for a bill while retaining its bill ID', async () => {
+    vi.setSystemTime(new Date('2026-10-03T12:00:00'))
+    api.accounts.get.mockResolvedValue({ ...account, statement_close_day: 5, payment_due_day: 12 })
+    api.accounts.bills.mockResolvedValue([
+      { ...bills[0], due_date: '2026-09-12' },
+      { ...bills[1], due_date: '2026-10-12' },
+    ])
+
+    await renderPage()
+
+    await waitFor(() => {
+      const last = txCalls().at(-1)!
+      expect(last.bill_id).toBe('bill-may')
+      expect(last.from).toBe('2026-09-04')
+      expect(last.to).toBe('2026-10-04')
+      expect(last.bill_cycle_view).toBe(true)
+    })
+  })
+
+  it('uses the nearest weekday when the configured close falls on Saturday', async () => {
+    vi.setSystemTime(new Date('2026-09-03T12:00:00'))
+    api.accounts.get.mockResolvedValue({ ...account, statement_close_day: 5, payment_due_day: 12 })
+    api.accounts.bills.mockResolvedValue([
+      { ...bills[0], due_date: '2026-08-12' },
+      { ...bills[1], due_date: '2026-09-12' },
+    ])
+
+    await renderPage()
+
+    await waitFor(() => {
+      const last = txCalls().at(-1)!
+      expect(last.bill_id).toBe('bill-may')
+      expect(last.from).toBe('2026-08-05')
+      expect(last.to).toBe('2026-09-03')
+    })
+  })
+
+  it('keeps a missing bill cycle reachable after a Friday adjusted close', async () => {
+    vi.setSystemTime(new Date('2026-10-15T12:00:00'))
+    api.accounts.get.mockResolvedValue({ ...account, statement_close_day: 5, payment_due_day: 12 })
+    api.accounts.bills.mockResolvedValue([
+      { ...bills[0], due_date: '2026-08-12' },
+      { ...bills[1], due_date: '2026-09-12' },
+    ])
+
+    const { user } = await renderPage()
+    await user.click(await screen.findByTitle('Previous cycle'))
+
+    await waitFor(() => {
+      const last = txCalls().at(-1)!
+      expect(last.from).toBe('2026-09-04')
+      expect(last.to).toBe('2026-10-04')
+      expect(last.bill_id).toBeUndefined()
+      expect(last.unbilled_only).toBe(true)
+    })
+  })
+
+  it('uses the same unlinked filter for a historical gap in the list and timeline', async () => {
+    vi.setSystemTime(new Date('2026-11-15T12:00:00'))
+    api.accounts.get.mockResolvedValue({ ...account, statement_close_day: 5, payment_due_day: 12 })
+    api.accounts.bills.mockResolvedValue([
+      { ...bills[0], due_date: '2026-09-12' },
+      { ...bills[1], due_date: '2026-11-12' },
+    ])
+    const { user } = await renderPage()
+    await user.click(await screen.findByTitle('Previous cycle'))
+    await user.click(await screen.findByTitle('Previous cycle'))
+
+    await waitFor(() => expect(txCalls().at(-1)).toEqual(expect.objectContaining({
+      from: '2026-09-04', to: '2026-10-04', unbilled_only: true,
+      bill_id: undefined, bill_cycle_view: true,
+    })))
+    expect(api.accounts.summary).toHaveBeenCalledWith(
+      'acc-1', '2026-09-04', '2026-10-04', undefined, true, true,
+    )
+  })
+
+  it('does not retain a bill filter when only the start of a custom range changes', async () => {
+    const { user } = await renderPage()
+    await user.click(await screen.findByTitle('Previous cycle'))
+    await user.click(cycleHeader())
+    await user.click(await screen.findByRole('button', { name: '3/30/2026' }))
+    await user.click(await screen.findByRole('button', { name: '15' }))
+
+    await waitFor(() => expect(txCalls().at(-1)).toEqual(expect.objectContaining({
+      from: '2026-03-15', to: '2026-04-29',
+      bill_id: undefined, unbilled_only: undefined,
+    })))
+  })
+
   it('asks for unbilled transactions only on the cycle that is still open', async () => {
     await renderPage()
 
@@ -146,7 +266,9 @@ describe('credit card cycle window', () => {
     await waitFor(() => expect(txCalls().at(-1)!.bill_id).toBe('bill-may'))
 
     await user.click(cycleHeader())
-    await user.click(await screen.findByRole('button', { name: '5/10/2026' }))
+    await user.click(await screen.findByRole('button', { name: '4/29/2026' }))
+    await user.click(await screen.findByRole('button', { name: 'April 2026' }))
+    await user.click(await screen.findByRole('button', { name: 'May' }))
     await user.click(await screen.findByRole('button', { name: '15' }))
 
     await waitFor(() => {
@@ -164,11 +286,13 @@ describe('credit card cycle window', () => {
 
     await user.click(await screen.findByTitle('Previous cycle'))
     await user.click(cycleHeader())
-    await user.click(await screen.findByRole('button', { name: '5/10/2026' }))
+    await user.click(await screen.findByRole('button', { name: '4/29/2026' }))
+    await user.click(await screen.findByRole('button', { name: 'April 2026' }))
+    await user.click(await screen.findByRole('button', { name: 'May' }))
     await user.click(await screen.findByRole('button', { name: '15' }))
 
     // Before the fix this read "Jun 2026", naming the window after a bill it
     // has no claim to.
-    await waitFor(() => expect(cycleHeader().textContent).toMatch(/11 Apr - 15 May/i))
+    await waitFor(() => expect(cycleHeader().textContent).toMatch(/30 Mar - 15 May/i))
   })
 })

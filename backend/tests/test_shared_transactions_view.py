@@ -156,6 +156,14 @@ async def test_owner_does_not_see_shared_duplicate(client, auth_headers, test_us
     # share), so the UI can render "your share" alongside the full
     # parent amount. is_shared stays False — no duplicate row.
     assert float(dinner_rows[0]["viewer_share"]) == 30.0
+    detail_resp = await client.get(
+        f"/api/transactions/{dinner_rows[0]['id']}", headers=auth_headers,
+    )
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()
+    assert detail["group_id"] == dinner_rows[0]["group_id"]
+    assert float(detail["viewer_share"]) == 30.0
+    assert sum(float(split["share_amount"]) for split in detail["splits"]) == 60.0
 
 
 @pytest.mark.asyncio

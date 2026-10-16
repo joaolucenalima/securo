@@ -14,6 +14,39 @@ from app.services.transaction_calendar_service import get_transaction_calendar
 
 
 @pytest.mark.asyncio
+async def test_expired_recurring_projection_does_not_affect_calendar_balance(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Projection account", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    recurring = RecurringTransaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Virtual bill", amount=Decimal("100"),
+        currency="BRL", type="debit", frequency="monthly",
+        start_date=date(2026, 7, 10), next_occurrence=date(2026, 7, 10),
+        auto_generate=False, hide_projection_after_due=True,
+    )
+    session.add_all([account, recurring])
+    await session.commit()
+
+    monkeypatch.setattr("app.services.transaction_calendar_service.app_today", lambda: date(2026, 7, 10))
+    due = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+    assert next(day for day in due.days if day.date == date(2026, 7, 10)).projected_count == 1
+
+    monkeypatch.setattr("app.services.transaction_calendar_service.app_today", lambda: date(2026, 7, 11))
+    expired = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+    july_10 = next(day for day in expired.days if day.date == date(2026, 7, 10))
+    assert july_10.projected_count == 0
+    assert july_10.ending_balance == 0
+
+
+@pytest.mark.asyncio
 async def test_transaction_calendar_combines_actual_projected_and_balances(
     session: AsyncSession, test_user, test_workspace
 ):

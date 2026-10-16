@@ -815,6 +815,13 @@
     "passkeyNeverUsed": "Nunca"
   },
   "dashboard": {
+    "monthlyResult": "Monthly result",
+    "monthlyResultTooltip": "Monthly income minus monthly expenses and expected recurring expenses. Uses the amounts shown above, without projected expenses. Enabling the option adds the value of CDB holdings.",
+    "monthlyResultBreakdown": "Income minus expenses. Future months include pending transactions and recurring projections; current and past months include remaining recurring expenses.",
+    "monthlyResultCdb": "CDB holdings",
+    "recurringExpenses": "Expected recurrences",
+    "includeCdb": "Include CDB holdings in balance and result",
+    "includedCdb": "CDB holdings included",
     "title": "Painel",
     "greetingMorning": "Bom dia",
     "greetingAfternoon": "Boa tarde",
@@ -1455,6 +1462,11 @@
     "generatePending": "Gerar Pendentes",
     "autoGenerate": "Gerar transações automaticamente",
     "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desativa para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
+    "transactionHandling": "Quando esta recorrência vencer",
+    "keepProjection": "Manter a previsão até ser conciliada",
+    "keepProjectionHelp": "Mantenha a transação esperada visível até que uma transação real seja conciliada.",
+    "hideProjectionAfterDue": "Ocultar a previsão após o vencimento",
+    "hideProjectionAfterDueHelp": "Mostra a previsão até ao vencimento e depois oculta-a sem criar uma transação.",
     "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar.",
     "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será eliminada permanentemente. As transações existentes manter-se-ão, mas perderão a ligação recorrente. Esta ação não pode ser desfeita."
   },

@@ -28,6 +28,61 @@ async def test_list_transactions(
 
 
 @pytest.mark.asyncio
+async def test_list_transactions_can_skip_unused_summary(
+    client: AsyncClient, auth_headers, test_transactions: list[Transaction]
+):
+    response = await client.get(
+        "/api/transactions?include_summary=false", headers=auth_headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 5
+    assert len(data["items"]) == 5
+    assert data.get("summary") is None
+
+
+@pytest.mark.asyncio
+async def test_card_cycle_search_and_summary_include_pending_unlinked_purchase(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_account: Account, test_user: User, test_workspace,
+):
+    from app.models.credit_card_bill import CreditCardBill
+
+    test_account.type = "credit_card"
+    test_account.statement_close_day = 5
+    test_account.payment_due_day = 12
+    bill = CreditCardBill(
+        user_id=test_user.id, account_id=test_account.id,
+        external_id="october-pending", due_date=date(2026, 10, 12),
+        total_amount=Decimal("42"), currency="BRL",
+    )
+    purchase = Transaction(
+        workspace_id=test_workspace.id, user_id=test_user.id,
+        account_id=test_account.id, description="VALEDRIVER",
+        amount=Decimal("42"), currency="BRL", type="debit",
+        date=date(2026, 9, 4), effective_date=date(2026, 9, 12),
+        source="sync", status="pending",
+    )
+    session.add_all([bill, purchase])
+    await session.commit()
+    params = {
+        "from": "2026-09-04", "to": "2026-10-04",
+        "bill_id": str(bill.id), "bill_cycle_view": "true",
+    }
+    listed = await client.get(
+        "/api/transactions", headers=auth_headers,
+        params={**params, "account_id": str(test_account.id)},
+    )
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["items"]] == [str(purchase.id)]
+    summary = await client.get(
+        f"/api/accounts/{test_account.id}/summary", headers=auth_headers, params=params,
+    )
+    assert summary.status_code == 200
+    assert summary.json()["projected_expenses"] == 42
+
+
+@pytest.mark.asyncio
 async def test_list_transactions_pagination(
     client: AsyncClient, auth_headers, test_transactions: list[Transaction]
 ):

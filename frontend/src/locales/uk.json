@@ -821,6 +821,13 @@
     "passkeyNeverUsed": "Ніколи"
   },
   "dashboard": {
+    "monthlyResult": "Monthly result",
+    "monthlyResultTooltip": "Monthly income minus monthly expenses and expected recurring expenses. Uses the amounts shown above, without projected expenses. Enabling the option adds the value of CDB holdings.",
+    "monthlyResultBreakdown": "Income minus expenses. Future months include pending transactions and recurring projections; current and past months include remaining recurring expenses.",
+    "monthlyResultCdb": "CDB holdings",
+    "recurringExpenses": "Expected recurrences",
+    "includeCdb": "Include CDB holdings in balance and result",
+    "includedCdb": "CDB holdings included",
     "title": "Панель",
     "greetingMorning": "Доброго ранку",
     "greetingAfternoon": "Добрий день",
@@ -1468,6 +1475,11 @@
     "generatePending": "Створити очікувані",
     "autoGenerate": "Створювати транзакції автоматично",
     "autoGenerateHelp": "Створює транзакцію щоразу, коли настає термін оплати. Вимкніть, щоб дочекатися реального списання (наприклад, із банківської синхронізації) і до того часу показувати її лише як майбутню.",
+    "transactionHandling": "Коли настає строк цієї регулярної операції",
+    "keepProjection": "Показувати прогноз до зіставлення",
+    "keepProjectionHelp": "Очікувана операція залишатиметься видимою, доки не буде зіставлена реальна транзакція.",
+    "hideProjectionAfterDue": "Приховати прогноз після строку оплати",
+    "hideProjectionAfterDueHelp": "Показувати до дати оплати, а потім приховати без створення транзакції.",
     "fxEstimate": "Оцінка на основі останнього курсу ({{rate}}). Підсумкова сума може змінитися.",
     "confirmDeleteDescription": "Визначення регулярної транзакції «{{description}}» буде видалено назавжди. Наявні транзакції залишаться, але втратять зв’язок із регулярною транзакцією. Цю дію не можна скасувати."
   },

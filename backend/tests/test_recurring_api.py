@@ -32,6 +32,33 @@ async def test_create_recurring_transaction(client, auth_headers, test_categorie
 
 
 @pytest.mark.asyncio
+async def test_expiring_projection_option_requires_generation_disabled(
+    client, auth_headers, test_account
+):
+    payload = {
+        "description": "Expected bank charge",
+        "amount": 39.90,
+        "currency": "BRL",
+        "type": "debit",
+        "frequency": "monthly",
+        "start_date": "2026-03-01",
+        "account_id": str(test_account.id),
+        "hide_projection_after_due": True,
+    }
+    rejected = await client.post("/api/recurring-transactions", json=payload, headers=auth_headers)
+    assert rejected.status_code == 400
+
+    accepted = await client.post(
+        "/api/recurring-transactions",
+        json={**payload, "auto_generate": False},
+        headers=auth_headers,
+    )
+    assert accepted.status_code == 201
+    assert accepted.json()["hide_projection_after_due"] is True
+    assert accepted.json()["auto_generate"] is False
+
+
+@pytest.mark.asyncio
 async def test_create_recurring_with_skip_first(client, auth_headers, test_categories, test_account):
     """skip_first=true advances next_occurrence by one frequency period."""
     response = await client.post(

@@ -821,6 +821,13 @@
     "passkeyNeverUsed": "Nigdy"
   },
   "dashboard": {
+    "monthlyResult": "Monthly result",
+    "monthlyResultTooltip": "Monthly income minus monthly expenses and expected recurring expenses. Uses the amounts shown above, without projected expenses. Enabling the option adds the value of CDB holdings.",
+    "monthlyResultBreakdown": "Income minus expenses. Future months include pending transactions and recurring projections; current and past months include remaining recurring expenses.",
+    "monthlyResultCdb": "CDB holdings",
+    "recurringExpenses": "Expected recurrences",
+    "includeCdb": "Include CDB holdings in balance and result",
+    "includedCdb": "CDB holdings included",
     "title": "Pulpit",
     "greetingMorning": "Dzień dobry",
     "greetingAfternoon": "Dzień dobry",
@@ -1513,6 +1520,11 @@
     "generatePending": "Generuj oczekujące",
     "autoGenerate": "Automatycznie generuj transakcje",
     "autoGenerateHelp": "Tworzy transakcję za każdym razem, gdy ten rachunek jest wymagalny. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
+    "transactionHandling": "Po terminie tej transakcji cyklicznej",
+    "keepProjection": "Pokazuj prognozę do czasu rozliczenia",
+    "keepProjectionHelp": "Oczekiwana transakcja pozostanie widoczna do momentu rozliczenia rzeczywistej transakcji.",
+    "hideProjectionAfterDue": "Ukryj prognozę po terminie",
+    "hideProjectionAfterDueHelp": "Pokazuj ją do terminu, a potem ukryj bez tworzenia transakcji.",
     "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić.",
     "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć."
   },

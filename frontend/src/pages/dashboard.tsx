@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
+import { useState, useMemo } from 'react'
+import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { dashboard, transactions, budgets, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, goals as goalsApi, groups as groupsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
+import { dashboard, transactions, budgets, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, assets as assetsApi, goals as goalsApi, groups as groupsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -29,15 +29,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  ComposedChart,
-  Area,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip as RechartsTooltip,
-  ResponsiveContainer,
-} from 'recharts'
 import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
@@ -93,9 +84,21 @@ function parseMonthFromParams(params: URLSearchParams): string | null {
 export default function DashboardPage() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
-  const { mask, privacyMode, MASK } = usePrivacyMode()
+  const { mask } = usePrivacyMode()
   const isMobile = useIsMobile()
   const { user } = useAuth()
+  const [cdbChoices, setCdbChoices] = useState<Record<string, boolean>>({})
+  const cdbChoiceKey = user?.id
+    ? `securo.dashboard.includeCdb.${user.id}`
+    : null
+  const includeCdb = cdbChoiceKey != null && (
+    cdbChoices[cdbChoiceKey] ?? localStorage.getItem(cdbChoiceKey) === 'true'
+  )
+  const setIncludeCdb = (checked: boolean) => {
+    if (!cdbChoiceKey) return
+    localStorage.setItem(cdbChoiceKey, String(checked))
+    setCdbChoices((choices) => ({ ...choices, [cdbChoiceKey]: checked }))
+  }
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const displayName = user?.preferences?.display_name || ''
   const locale = useDisplayLocale()
@@ -108,65 +111,35 @@ export default function DashboardPage() {
     return displayName ? `${base}, ${displayName}` : base
   })()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-    return parseMonthFromParams(searchParams) ?? currentMonth()
-  })
+  const selectedMonth = parseMonthFromParams(searchParams) ?? currentMonth()
+  const isCurrentMonth = selectedMonth === currentMonth()
+  const includeCdbForCurrentMonth = isCurrentMonth && includeCdb
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null)
   // Transactions section view, mirroring the transactions page: the choice
   // lives in the URL so the section can be refreshed, bookmarked or shared.
-  const [txViewMode, setTxViewMode] = useState<TransactionsViewMode>(() => (
-    searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
-  ))
-  const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
-
-  const prevSearchRef = useRef<string | null>(null)
-
-  // Sync state from URL when navigating (e.g. back/forward button)
-  useEffect(() => {
-    const search = searchParams.toString()
-    if (prevSearchRef.current === search) return
-    const isInitial = prevSearchRef.current === null
-    prevSearchRef.current = search
-
-    const parsedMonth = parseMonthFromParams(searchParams)
-    if (parsedMonth) {
-      setSelectedMonth(parsedMonth)
-    } else if (!isInitial) {
-      setSelectedMonth(currentMonth())
-    }
-    setTxViewMode(searchParams.get('view') === 'calendar' ? 'calendar' : 'list')
-    setCalendarSelectedDate(searchParams.get('day') ?? '')
-  }, [searchParams])
-
-  // Sync selectedMonth and the transactions view back to URL
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (selectedMonth) {
-      params.set('month', selectedMonth)
-      params.delete('from')
-      params.delete('to')
-    } else {
-      params.delete('month')
-    }
-
-    if (txViewMode === 'calendar') {
-      params.set('view', 'calendar')
-      if (calendarSelectedDate) params.set('day', calendarSelectedDate)
-      else params.delete('day')
-    } else {
+  const txViewMode: TransactionsViewMode = searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
+  const calendarSelectedDate = searchParams.get('day') ?? ''
+  const setTxViewMode = (mode: TransactionsViewMode) => {
+    const params = new URLSearchParams(searchParams)
+    if (mode === 'calendar') params.set('view', 'calendar')
+    else {
       params.delete('view')
       params.delete('day')
     }
-
     setSearchParams(params, { replace: true })
-  }, [selectedMonth, txViewMode, calendarSelectedDate, setSearchParams])
+  }
+  const setCalendarSelectedDate = (day: string) => {
+    const params = new URLSearchParams(searchParams)
+    if (day) params.set('day', day)
+    else params.delete('day')
+    setSearchParams(params, { replace: true })
+  }
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
   const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
   const queryClient = useQueryClient()
   const [headerCalOpen, setHeaderCalOpen] = useState(false)
-  const [hoveredDay, setHoveredDay] = useState<number | null>(null)
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const { from: monthStart, to: monthEnd } = monthRange(selectedMonth)
   const monthParam = monthStart
@@ -174,8 +147,12 @@ export default function DashboardPage() {
   const monthLabelStr = monthLabel(selectedMonth, uiLocale)
 
   const handleMonthChange = (newMonth: string) => {
-    setSelectedMonth(newMonth)
-}
+    const params = new URLSearchParams(searchParams)
+    params.set('month', newMonth)
+    params.delete('from')
+    params.delete('to')
+    setSearchParams(params, { replace: true })
+  }
 
   // Active Collection filter (issue #105): scope dashboard cards to its
   // accounts. undefined when "All accounts".
@@ -195,14 +172,6 @@ export default function DashboardPage() {
   const { data: spending, isLoading: spendingLoading } = useQuery({
     queryKey: ['dashboard', 'spending', selectedMonth, activeAccountIds],
     queryFn: () => dashboard.spendingByCategory(monthParam, acctIds),
-    enabled: !noAccounts,
-  })
-
-  const prevMonth = shiftMonth(selectedMonth, -1)
-
-  const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
-    queryKey: ['dashboard', 'balance-history', selectedMonth, activeAccountIds],
-    queryFn: () => dashboard.balanceHistory(monthParam, acctIds),
     enabled: !noAccounts,
   })
 
@@ -265,6 +234,12 @@ export default function DashboardPage() {
   const { data: accountsList, isLoading: accountsLoading, isError: accountsError } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
+  })
+
+  const { data: assetsList, isLoading: assetsLoading } = useQuery({
+    queryKey: ['assets'],
+    queryFn: () => assetsApi.list(),
+    enabled: includeCdbForCurrentMonth,
   })
 
   const { data: payeesList } = useQuery({
@@ -361,42 +336,9 @@ export default function DashboardPage() {
   }
 
 
-  const cumulativeData = useMemo(() => {
-    if (!balanceHistory) return []
-    const daysInMonth = monthLastDay(selectedMonth)
-    const result: { day: number; current: number | null; previous: number }[] = []
-    let lastPrevBalance = 0
-    for (let day = 1; day <= daysInMonth; day++) {
-      const cur = balanceHistory.current.find(d => d.day === day)
-      const prev = balanceHistory.previous.find(d => d.day === day)
-      if (prev?.balance != null) {
-        lastPrevBalance = prev.balance
-      }
-      result.push({
-        day,
-        current: cur?.balance ?? null,
-        previous: prev?.balance ?? lastPrevBalance,
-      })
-    }
-    return result
-  }, [balanceHistory, selectedMonth])
-
-  const lastCurrentPoint = [...cumulativeData].reverse().find(d => d.current !== null)
-  const lastDay = lastCurrentPoint?.day ?? 0
-  const currentStartBalance = balanceHistory?.current.find(d => d.day === 1)?.balance ?? 0
-  const currentLatestBalance = lastCurrentPoint?.current ?? 0
-  const monthVariation = currentLatestBalance - currentStartBalance
-
   const primaryCurrency = summary?.primary_currency ?? userCurrency
-  const totalBalance = summary?.total_balance_primary ?? Object.values(summary?.total_balance ?? {}).reduce((a, b) => a + Number(b), 0)
-  const projectedBalance = summary?.projected_balance_primary ?? Object.values(summary?.projected_balance ?? {}).reduce((a, b) => a + Number(b), 0)
-  const hasProjectedBalance = Math.abs(projectedBalance - totalBalance) >= 0.01
-  const assetsValue = summary?.assets_value_primary ?? Object.values(summary?.assets_value ?? {}).reduce((a, b) => a + b, 0)
-
-  // Available balance: checking/savings accounts only — what's actually
-  // spendable today, as opposed to `totalBalance` (net worth: accounts +
-  // investments - open card bills). Scoped to the active Collection filter,
-  // same as the rest of the dashboard.
+  // The bank balance starts with checking/savings accounts. The CDB option
+  // adds CDB holdings to the spending figures.
   const availableBalanceAccounts = useMemo(() => {
     const all = accountsList ?? []
     const scoped = activeAccountIds ? all.filter((a) => activeAccountIds.includes(a.id)) : all
@@ -405,6 +347,13 @@ export default function DashboardPage() {
   const availableBalance = availableBalanceAccounts.reduce(
     (sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0,
   )
+  const currentCdbValue = (assetsList ?? [])
+    .filter((asset) => asset.type === 'investment' && !asset.sell_date &&
+      asset.name.toLocaleLowerCase().includes('cdb') &&
+      (activeWalletIds === null || activeWalletIds.includes(asset.group_id ?? '')))
+    .reduce((sum, asset) => sum + Number(asset.current_value_primary ?? asset.current_value ?? 0), 0)
+  const cdbValue = currentCdbValue
+  const spendableBalance = availableBalance + (includeCdbForCurrentMonth ? cdbValue : 0)
   const sortedAvailableBalanceAccounts = useMemo(
     () => sortAccountsByAbsoluteBalance(availableBalanceAccounts, (a) => a.balance_primary ?? a.current_balance),
     [availableBalanceAccounts],
@@ -412,15 +361,6 @@ export default function DashboardPage() {
   // While accounts are loading or failed to load, treat their balance
   // components as unavailable rather than silently rendering zero.
   const accountsUnavailable = accountsLoading || accountsError
-  const creditCardBalance = sumAccountBalances((accountsList ?? [])
-    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card'))
-  // Net worth's "Available balance" breakdown row: every non-card account
-  // (unlike the headline `availableBalance`, which is checking/savings only),
-  // so it reconciles with `totalBalance` — which sums all account types.
-  const nonCardAccountsBalance = (accountsList ?? [])
-    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type !== 'credit_card')
-    .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
-
   // Savings rate & projection
   const income = Number(summary?.monthly_income_primary ?? summary?.monthly_income ?? 0)
   const expenses = Number(summary?.monthly_expenses_primary ?? summary?.monthly_expenses ?? 0)
@@ -429,8 +369,26 @@ export default function DashboardPage() {
   // realised figure, so a month with nothing pending stays quiet.
   const projectedIncome = Number(summary?.projected_income_primary ?? summary?.projected_income ?? income)
   const projectedExpenses = Number(summary?.projected_expenses_primary ?? summary?.projected_expenses ?? expenses)
+  const resultIncome = Number(summary?.result_income_primary ?? income)
+  const resultExpenses = Number(summary?.result_expenses_primary ?? expenses)
+  const resultProjectedIncome = Number(summary?.result_projected_income_primary ?? projectedIncome)
+  const resultProjectedExpenses = Number(summary?.result_projected_expenses_primary ?? projectedExpenses)
+  // Use the forecast totals for future months so pending and future-dated
+  // transactions contribute alongside virtual recurring occurrences.
+  // For current and past months, keep the existing realised-plus-recurring view.
+  const recurringExpenses = (projectedTxs ?? []).reduce((sum, projection) => {
+    if (projection.type !== 'debit') return sum
+    if (activeAccountIds !== null && !activeAccountIds.includes(projection.account_id ?? '')) return sum
+    const category = categoriesList?.find((item) => item.id === projection.category_id)
+    if (category?.is_ignored || category?.treat_as_transfer) return sum
+    return sum + Number(projection.amount_primary ?? (
+      projection.currency === primaryCurrency ? projection.amount : 0
+    ))
+  }, 0)
+  const monthlyResult = selectedMonth > currentMonth()
+    ? resultProjectedIncome - resultProjectedExpenses
+    : resultIncome - resultExpenses - recurringExpenses + (includeCdbForCurrentMonth ? cdbValue : 0)
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
-  const isCurrentMonth = selectedMonth === currentMonth()
   const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
   const daysInMonth = monthLastDay(selectedMonth)
   const projectedSpend = expenses > 0 && isCurrentMonth && daysElapsed > 0
@@ -483,9 +441,10 @@ export default function DashboardPage() {
       .sort((a, b) => catSortDesc ? b.actual - a.actual : a.actual - b.actual)
   }, [spending, budgetComparison, catSortDesc])
 
-  const [txPage, setTxPage] = useState(1)
+  const [txPageState, setTxPageState] = useState({ month: selectedMonth, page: 1 })
+  const txPage = txPageState.month === selectedMonth ? txPageState.page : 1
+  const setTxPage = (page: number) => setTxPageState({ month: selectedMonth, page })
   const [txSortDesc, setTxSortDesc] = useState(true)
-  useEffect(() => setTxPage(1), [selectedMonth])
 
   type DisplayRow = {
     key: string
@@ -643,7 +602,7 @@ export default function DashboardPage() {
                   onMonthSelect={(date) => {
                     if (!date) return
                     const newMonth = format(date, 'yyyy-MM')
-                    setSelectedMonth(newMonth)
+                    handleMonthChange(newMonth)
                     setHeaderCalOpen(false)
                   }}
                 />
@@ -659,10 +618,10 @@ export default function DashboardPage() {
 
       {/* Hero Card: Available Balance + secondary indicators */}
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5 px-5 pt-5 pb-4">
-        {/* Available balance in checking/savings accounts */}
+        {/* Available balance in checking/savings accounts and optional CDBs */}
         <div className="pb-4 mb-4 border-b border-border">
           <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
-          {summaryLoading || accountsUnavailable ? (
+          {summaryLoading || accountsUnavailable || (includeCdbForCurrentMonth && assetsLoading) ? (
             <Skeleton className="h-9 w-40" />
           ) : (
             <>
@@ -670,9 +629,12 @@ export default function DashboardPage() {
                   colour is left to mean direction (income, expenses) and
                   exception (a negative balance), so it still says something
                   when it does appear. */}
-              <p className={`text-3xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
-                {mask(formatCurrency(availableBalance, primaryCurrency, locale))}
+              <p className={`text-3xl font-bold tabular-nums leading-tight ${spendableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
+                {mask(formatCurrency(spendableBalance, primaryCurrency, locale))}
               </p>
+              {includeCdbForCurrentMonth && <p className="text-xs text-muted-foreground tabular-nums mt-1">
+                {t('dashboard.includedCdb')} {mask(formatCurrency(cdbValue, primaryCurrency, locale))}
+              </p>}
               {sortedAvailableBalanceAccounts.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {sortedAvailableBalanceAccounts.map((acc) => {
@@ -787,58 +749,60 @@ export default function DashboardPage() {
             )}
           </button>
 
-          {/* Net worth */}
+          {/* Actual income minus actual expenses and remaining recurrences. */}
           <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center gap-1">
-              {t('dashboard.netWorth')}
+              {t('dashboard.monthlyResult')}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-muted text-muted-foreground hover:bg-primary hover:text-primary-foreground transition-colors text-[9px] font-bold leading-none"
-                  >
-                    i
-                  </button>
+                  <button type="button" className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-muted text-muted-foreground hover:bg-primary hover:text-primary-foreground transition-colors text-[9px] font-bold leading-none">i</button>
                 </TooltipTrigger>
-                <TooltipContent className="w-56">
-                  <p>{t('dashboard.netWorthTooltip')}</p>
-                  <div className="mt-1.5 pt-1.5 border-t border-background/20 space-y-0.5">
-                    <div className="flex justify-between gap-3">
-                      <span>{t('dashboard.availableBalance')}</span>
-                      <span>{mask(formatCurrency(nonCardAccountsBalance, primaryCurrency, locale))}</span>
+                <TooltipContent className="w-64">
+                  <p>{t('dashboard.monthlyResultBreakdown')}</p>
+                  {!summaryLoading && !projectedTxLoading && (!includeCdbForCurrentMonth || !assetsLoading) && (
+                    <div className="mt-1.5 space-y-0.5 border-t border-background/20 pt-1.5">
+                      <div className="flex justify-between gap-3">
+                        <span>{t(selectedMonth > currentMonth() ? 'dashboard.projectedIncome' : 'dashboard.monthlyIncome')}</span>
+                        <span className="tabular-nums">{mask(formatCurrency(selectedMonth > currentMonth() ? resultProjectedIncome : resultIncome, primaryCurrency, locale))}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span>{t(selectedMonth > currentMonth() ? 'dashboard.projectedExpenses' : 'dashboard.monthlyExpenses')}</span>
+                        <span className="tabular-nums">-{mask(formatCurrency(selectedMonth > currentMonth() ? resultProjectedExpenses : resultExpenses, primaryCurrency, locale))}</span>
+                      </div>
+                      {selectedMonth <= currentMonth() && recurringExpenses > 0 && (
+                        <div className="flex justify-between gap-3">
+                          <span>{t('dashboard.recurringExpenses')}</span>
+                          <span className="tabular-nums">-{mask(formatCurrency(recurringExpenses, primaryCurrency, locale))}</span>
+                        </div>
+                      )}
+                      {includeCdbForCurrentMonth && (
+                        <div className="flex justify-between gap-3">
+                          <span>{t('dashboard.monthlyResultCdb')}</span>
+                          <span className="tabular-nums">{mask(formatCurrency(cdbValue, primaryCurrency, locale))}</span>
+                        </div>
+                      )}
                     </div>
-                    {assetsValue > 0 && (
-                      <div className="flex justify-between gap-3">
-                        <span>{t('dashboard.assetsValue')}</span>
-                        <span>{mask(formatCurrency(assetsValue, primaryCurrency, locale))}</span>
-                      </div>
-                    )}
-                    {creditCardBalance !== 0 && (
-                      <div className="flex justify-between gap-3">
-                        <span>{t('dashboard.creditCardBalance')}</span>
-                        <span>{mask(formatCurrency(creditCardBalance, primaryCurrency, locale))}</span>
-                      </div>
-                    )}
-                    {hasProjectedBalance && (
-                      <div className="flex justify-between gap-3">
-                        <span>{t('dashboard.projectedBalance')}</span>
-                        <span>{mask(formatCurrency(projectedBalance, primaryCurrency, locale))}</span>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </TooltipContent>
               </Tooltip>
             </p>
-            {/* Net worth stays neutral so the secondary row does not out-shout
-                the headline above it. It is the larger number here; colouring
-                it too pulled the eye away from available balance. */}
-            {summaryLoading || accountsUnavailable ? (
-              <Skeleton className="h-6 w-24" />
-            ) : (
-              <p className={`text-lg sm:text-xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
-                {mask(formatCurrency(totalBalance, primaryCurrency, locale))}
-              </p>
+            {summaryLoading || projectedTxLoading || (includeCdbForCurrentMonth && assetsLoading) ? <Skeleton className="h-6 w-24" /> : (
+              <>
+                <p className={`text-xl font-bold tabular-nums ${monthlyResult < 0 ? 'text-rose-500' : 'text-foreground'}`}>
+                  {mask(formatCurrency(monthlyResult, primaryCurrency, locale))}
+                </p>
+              </>
             )}
+            {isCurrentMonth && <label className="mt-2 inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeCdb}
+                disabled={!cdbChoiceKey}
+                onChange={(event) => setIncludeCdb(event.target.checked)}
+                className="size-3.5 rounded border-border accent-primary"
+              />
+              {t('dashboard.includeCdb')}
+            </label>}
           </div>
 
           {/* Savings rate */}
@@ -903,8 +867,8 @@ export default function DashboardPage() {
         )
       )}
 
-      {/* Charts: Category Spending Bars + Balance Evolution */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5" style={{ gridAutoRows: 'minmax(380px, auto)' }}>
+      {/* Spending by category for the selected month */}
+      <div className="mb-5">
         {/* Category Spending Bars */}
         <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col max-h-[420px]">
           <div className="px-5 py-4 border-b border-border shrink-0 flex items-center justify-between">
@@ -988,161 +952,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Cumulative Spending Comparison */}
-        <div className="bg-card rounded-xl border border-border shadow-sm max-h-[420px] flex flex-col">
-          <div className="px-5 pt-5 pb-3 shrink-0">
-            <div className="flex items-start justify-between mb-0.5">
-              <div>
-                <p className="text-base font-bold text-foreground">{t('dashboard.balanceFlow')}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(dateLocale)} → {new Date(`${selectedMonth}-${String(lastCurrentPoint?.day ?? monthLastDay(selectedMonth)).padStart(2, '0')}T00:00:00`).toLocaleDateString(dateLocale)}
-                </p>
-              </div>
-              {!balanceHistoryLoading && lastCurrentPoint && (
-                <div className="text-right">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('dashboard.balancePeriodVariation')}</p>
-                  <span className={`text-lg font-bold tabular-nums ${monthVariation >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {mask(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`)}
-                  </span>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-3 mt-2">
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="inline-block w-3 h-0.5 rounded-full bg-emerald-500" />
-                {t('dashboard.balanceCurrentMonthLegend')}
-              </span>
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="inline-block w-3 border-t-2 border-dashed border-slate-400" />
-                {t('dashboard.balancePreviousMonthLegend')}
-              </span>
-            </div>
-          </div>
-          <div className="px-1 pb-4 flex-1 min-h-0">
-            {balanceHistoryLoading ? (
-              <Skeleton className="h-full w-full" />
-            ) : cumulativeData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart
-                  data={cumulativeData}
-                  margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
-                  className="cursor-pointer"
-                  onMouseMove={(state) => {
-                    const idx = state?.activeTooltipIndex
-                    if (typeof idx === 'number') {
-                      const point = cumulativeData[idx]
-                      if (point) setHoveredDay(point.day)
-                    }
-                  }}
-                  onMouseLeave={() => setHoveredDay(null)}
-                  onClick={(_state) => {
-                    // Access activePayload from the underlying native event target chart state
-                    const chartState = _state as unknown as { activePayload?: Array<{ payload: { day: number } }> }
-                    const payload = chartState?.activePayload ?? []
-                    if (payload[0]) {
-                      const day = String(payload[0].payload.day).padStart(2, '0')
-                      const dateStr = `${selectedMonth}-${day}`
-                      setDrillDown({
-                        title: t('dashboard.drillDownDay', { date: new Date(dateStr + 'T00:00:00').toLocaleDateString(dateLocale) }),
-                        from: dateStr,
-                        to: dateStr,
-                      })
-                    }
-                  }}
-                >
-                  <defs>
-                    <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.18} />
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis
-                    dataKey="day"
-                    tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval={3}
-                  />
-                  <YAxis
-                    tickFormatter={(v) => {
-                      if (privacyMode) return ''
-                      if (v === 0) return '0'
-                      return formatCurrency(v, userCurrency, locale).replace(/,00$/, '').replace(/\.00$/, '')
-                    }}
-                    tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={56}
-                    tickCount={5}
-                    domain={[
-                      (dataMin: number) => dataMin < 0 ? Math.floor(dataMin / 100) * 100 : 0,
-                      (dataMax: number) => Math.ceil(dataMax / 100) * 100,
-                    ]}
-                  />
-                  <RechartsTooltip
-                    formatter={(value, name) => [
-                      value !== null ? (privacyMode ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
-                      name === 'current' ? monthLabel(selectedMonth, uiLocale).split(' ')[0] : monthLabel(prevMonth, uiLocale).split(' ')[0],
-                    ]}
-                    labelFormatter={(day) => t('dashboard.day', { day })}
-                    contentStyle={{
-                      background: 'var(--card)',
-                      color: 'var(--foreground)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '0.75rem',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="current"
-                    stroke="#10B981"
-                    strokeWidth={2}
-                    fill="url(#cumGrad)"
-                    dot={false}
-                    activeDot={{ r: 3, fill: '#10B981' }}
-                    connectNulls={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="previous"
-                    stroke="#94A3B8"
-                    strokeWidth={2}
-                    strokeDasharray="5 3"
-                    dot={false}
-                    activeDot={{ r: 3, fill: '#94A3B8' }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-muted-foreground text-sm text-center py-12">{t('dashboard.noData')}</p>
-            )}
-          </div>
-          {!balanceHistoryLoading && lastCurrentPoint && (() => {
-            const footerDay = hoveredDay ?? lastDay
-            const footerPrev = balanceHistory?.previous.find(d => d.day === footerDay)?.balance ?? 0
-            const footerCurrent = cumulativeData.find(d => d.day === footerDay)?.current ?? totalBalance
-            const footerPct = footerPrev !== 0 ? ((footerCurrent - footerPrev) / Math.abs(footerPrev)) * 100 : null
-            if (footerPrev === 0 || footerPct === null) return null
-            return (
-              <div className="px-5 pb-4 pt-0 shrink-0">
-                <p className="text-xs text-muted-foreground">
-                  {t('dashboard.balanceFlowVsPrev', {
-                    month: monthLabel(prevMonth, uiLocale).split(' ')[0],
-                    day: footerDay,
-                    amount: mask(formatCurrency(footerPrev, userCurrency, locale)),
-                    delta: `${footerPct >= 0 ? '+' : ''}${footerPct.toFixed(1)}%`,
-                  })}
-                  {' '}
-                  <span className={footerPct >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
-                    {footerPct >= 0 ? '\u25B2' : '\u25BC'}
-                  </span>
-                </p>
-              </div>
-            )
-          })()}
-        </div>
       </div>
 
       {/* Goals Progress Widget */}

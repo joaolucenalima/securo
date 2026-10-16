@@ -624,6 +624,7 @@ export interface RecurringTransaction {
   end_date: string | null
   is_active: boolean
   auto_generate: boolean
+  hide_projection_after_due: boolean
   next_occurrence: string
   amount_primary: number | null
   fx_rate_used: number | null
@@ -711,6 +712,11 @@ export interface DashboardSummary {
   projected_expenses?: number
   projected_income_primary?: number
   projected_expenses_primary?: number
+  result_income_primary?: number
+  result_expenses_primary?: number
+  result_projected_income_primary?: number
+  result_projected_expenses_primary?: number
+  recurring_expenses_primary?: number
   accounts_count: number
   pending_categorization: number
   pending_categorization_amount: number
