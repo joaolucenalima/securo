@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useMemo } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
@@ -111,60 +111,29 @@ export default function DashboardPage() {
     return displayName ? `${base}, ${displayName}` : base
   })()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-    return parseMonthFromParams(searchParams) ?? currentMonth()
-  })
+  const selectedMonth = parseMonthFromParams(searchParams) ?? currentMonth()
   const isCurrentMonth = selectedMonth === currentMonth()
   const includeCdbForCurrentMonth = isCurrentMonth && includeCdb
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null)
   // Transactions section view, mirroring the transactions page: the choice
   // lives in the URL so the section can be refreshed, bookmarked or shared.
-  const [txViewMode, setTxViewMode] = useState<TransactionsViewMode>(() => (
-    searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
-  ))
-  const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
-
-  const prevSearchRef = useRef<string | null>(null)
-
-  // Sync state from URL when navigating (e.g. back/forward button)
-  useEffect(() => {
-    const search = searchParams.toString()
-    if (prevSearchRef.current === search) return
-    const isInitial = prevSearchRef.current === null
-    prevSearchRef.current = search
-
-    const parsedMonth = parseMonthFromParams(searchParams)
-    if (parsedMonth) {
-      setSelectedMonth(parsedMonth)
-    } else if (!isInitial) {
-      setSelectedMonth(currentMonth())
-    }
-    setTxViewMode(searchParams.get('view') === 'calendar' ? 'calendar' : 'list')
-    setCalendarSelectedDate(searchParams.get('day') ?? '')
-  }, [searchParams])
-
-  // Sync selectedMonth and the transactions view back to URL
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (selectedMonth) {
-      params.set('month', selectedMonth)
-      params.delete('from')
-      params.delete('to')
-    } else {
-      params.delete('month')
-    }
-
-    if (txViewMode === 'calendar') {
-      params.set('view', 'calendar')
-      if (calendarSelectedDate) params.set('day', calendarSelectedDate)
-      else params.delete('day')
-    } else {
+  const txViewMode: TransactionsViewMode = searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
+  const calendarSelectedDate = searchParams.get('day') ?? ''
+  const setTxViewMode = (mode: TransactionsViewMode) => {
+    const params = new URLSearchParams(searchParams)
+    if (mode === 'calendar') params.set('view', 'calendar')
+    else {
       params.delete('view')
       params.delete('day')
     }
-
     setSearchParams(params, { replace: true })
-  }, [selectedMonth, txViewMode, calendarSelectedDate, setSearchParams])
+  }
+  const setCalendarSelectedDate = (day: string) => {
+    const params = new URLSearchParams(searchParams)
+    if (day) params.set('day', day)
+    else params.delete('day')
+    setSearchParams(params, { replace: true })
+  }
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
@@ -178,8 +147,12 @@ export default function DashboardPage() {
   const monthLabelStr = monthLabel(selectedMonth, uiLocale)
 
   const handleMonthChange = (newMonth: string) => {
-    setSelectedMonth(newMonth)
-}
+    const params = new URLSearchParams(searchParams)
+    params.set('month', newMonth)
+    params.delete('from')
+    params.delete('to')
+    setSearchParams(params, { replace: true })
+  }
 
   // Active Collection filter (issue #105): scope dashboard cards to its
   // accounts. undefined when "All accounts".
@@ -468,9 +441,10 @@ export default function DashboardPage() {
       .sort((a, b) => catSortDesc ? b.actual - a.actual : a.actual - b.actual)
   }, [spending, budgetComparison, catSortDesc])
 
-  const [txPage, setTxPage] = useState(1)
+  const [txPageState, setTxPageState] = useState({ month: selectedMonth, page: 1 })
+  const txPage = txPageState.month === selectedMonth ? txPageState.page : 1
+  const setTxPage = (page: number) => setTxPageState({ month: selectedMonth, page })
   const [txSortDesc, setTxSortDesc] = useState(true)
-  useEffect(() => setTxPage(1), [selectedMonth])
 
   type DisplayRow = {
     key: string
@@ -628,7 +602,7 @@ export default function DashboardPage() {
                   onMonthSelect={(date) => {
                     if (!date) return
                     const newMonth = format(date, 'yyyy-MM')
-                    setSelectedMonth(newMonth)
+                    handleMonthChange(newMonth)
                     setHeaderCalOpen(false)
                   }}
                 />
