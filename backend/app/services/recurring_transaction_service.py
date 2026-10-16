@@ -245,6 +245,28 @@ def should_show_projection(recurring: RecurringTransaction, effective_date: date
     return not recurring.hide_projection_after_due or effective_date >= today
 
 
+def should_show_home_projection(
+    recurring: RecurringTransaction, occurrence_date: date, today: date,
+    accounting_mode: str,
+) -> bool:
+    """Hide a card occurrence after its month's statement has closed.
+
+    This home rule is independent of the recurrence's own expiry setting.
+    Purchases on the close day belong to the following statement.
+    """
+    if accounting_mode != "accrual":
+        return True
+    account = recurring.account
+    if account is None or account.type != "credit_card" or not account.statement_close_day:
+        return True
+    close_day = min(
+        account.statement_close_day,
+        calendar.monthrange(occurrence_date.year, occurrence_date.month)[1],
+    )
+    close_date = occurrence_date.replace(day=close_day)
+    return not (today > close_date and occurrence_date >= close_date)
+
+
 def get_occurrences_in_range(
     start: date, frequency: str, end_date: Optional[date],
     range_start: date, range_end: date,

@@ -1,6 +1,7 @@
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,9 @@ from app.services.dashboard_service import (
     get_projected_transactions,
 )
 from app.services.transaction_service import get_transactions
+from app.services import admin_service
+from app.services.transaction_calendar_service import get_transaction_calendar
+from app.services.recurring_transaction_service import should_show_home_projection
 
 
 # ---------------------------------------------------------------------------
@@ -712,6 +716,95 @@ async def test_spending_percentage(session: AsyncSession, test_user, test_worksp
 # ---------------------------------------------------------------------------
 # get_projected_transactions
 # ---------------------------------------------------------------------------
+
+
+def test_home_close_rule_requires_accrual_card_and_configured_close():
+    recurring = SimpleNamespace(account=SimpleNamespace(
+        type="credit_card", statement_close_day=31,
+    ))
+    occurrence = date(2026, 2, 28)
+    assert should_show_home_projection(recurring, occurrence, occurrence, "accrual")
+    assert not should_show_home_projection(
+        recurring, occurrence, date(2026, 3, 1), "accrual"
+    )
+    assert should_show_home_projection(recurring, occurrence, date(2026, 3, 1), "cash")
+    recurring.account.type = "checking"
+    assert should_show_home_projection(recurring, occurrence, date(2026, 3, 1), "accrual")
+    recurring.account.type = "credit_card"
+    recurring.account.statement_close_day = None
+    assert should_show_home_projection(recurring, occurrence, date(2026, 3, 1), "accrual")
+
+
+@pytest.mark.asyncio
+async def test_home_card_projection_stops_after_statement_close(
+    session, test_user, test_workspace, monkeypatch
+):
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Closing card", type="credit_card", balance=Decimal("0"),
+        currency=test_user.primary_currency, statement_close_day=15,
+    )
+    category = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Card spend", icon="tag", color="#000", is_system=False,
+    )
+    before = RecurringTransaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, category_id=category.id,
+        description="Before close", amount=Decimal("40"),
+        currency=test_user.primary_currency, type="debit", frequency="monthly",
+        start_date=date(2026, 7, 10), next_occurrence=date(2026, 7, 10),
+        auto_generate=False, hide_projection_after_due=False,
+    )
+    after = RecurringTransaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, category_id=category.id,
+        description="After close", amount=Decimal("60"),
+        currency=test_user.primary_currency, type="debit", frequency="monthly",
+        start_date=date(2026, 7, 20), next_occurrence=date(2026, 7, 20),
+        auto_generate=False, hide_projection_after_due=False,
+    )
+    session.add_all([account, category, before, after])
+    await session.commit()
+    await admin_service.set_app_setting(session, "credit_card_accounting_mode", "accrual")
+    monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: date(2026, 7, 16))
+    monkeypatch.setattr("app.services.transaction_calendar_service.app_today", lambda: date(2026, 7, 16))
+
+    rows = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1), home_view=True,
+    )
+    assert [row.description for row in rows] == ["Before close"]
+    default_rows = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1),
+    )
+    assert {row.description for row in default_rows} == {"Before close", "After close"}
+
+    summary = await get_summary(session, test_workspace.id, test_user.id, date(2026, 7, 1))
+    assert summary.projected_expenses_primary == 40
+    assert summary.result_projected_expenses_primary == 40
+    assert summary.recurring_expenses_primary == 40
+    spending = await get_spending_by_category(
+        session, test_workspace.id, test_user.id, date(2026, 7, 1)
+    )
+    assert sum(row.projected_total for row in spending) == 40
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, date(2026, 7, 1), home_view=True,
+    )
+    assert {item.description for day in calendar.days for item in day.items
+            if item.kind == "projected"} == {"Before close"}
+
+    monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: date(2026, 7, 15))
+    on_close_rows = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1), home_view=True,
+    )
+    assert {row.description for row in on_close_rows} == {"Before close", "After close"}
+
+    await admin_service.set_app_setting(session, "credit_card_accounting_mode", "cash")
+    cash_rows = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1), home_view=True,
+    )
+    assert {row.description for row in cash_rows} == {"Before close", "After close"}
+
 
 
 @pytest.mark.asyncio

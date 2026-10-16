@@ -23,11 +23,14 @@ from app.services.dashboard_service import (
     _balance_at,
     _daily_balance_deltas_by_date,
     _get_forecast_transactions,
+    _materialized_recurring_occurrences,
 )
 from app.services.fx_rate_service import convert as fx_convert
+from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.recurring_transaction_service import (
     adjust_weekend_date,
     get_occurrences_in_range,
+    should_show_home_projection,
     should_show_projection,
 )
 
@@ -38,6 +41,7 @@ async def get_transaction_calendar(
     user_id: uuid.UUID,
     month: Optional[date] = None,
     account_ids: Optional[list[uuid.UUID]] = None,
+    home_view: bool = False,
 ) -> TransactionCalendarResponse:
     """Build a read-only month-grid transaction calendar.
 
@@ -191,6 +195,7 @@ async def get_transaction_calendar(
         grid_start,
         grid_end,
         requested_account_ids,
+        await get_credit_card_accounting_mode(session) if home_view else None,
     )
     start_balance += carried_projected_delta
     for item, signed_delta in projected_items:
@@ -405,7 +410,10 @@ def _forecast_item(
     )
 
 
-def _count_occurrences_before(recurring: RecurringTransaction, end: date, today: date) -> int:
+def _count_occurrences_before(
+    recurring: RecurringTransaction, end: date, today: date,
+    home_accounting_mode: Optional[str] = None,
+) -> int:
     """Count still-virtual effective occurrences before ``end`` without truncating."""
     nominal_start = recurring.next_occurrence
     first_effective = adjust_weekend_date(
@@ -436,7 +444,12 @@ def _count_occurrences_before(recurring: RecurringTransaction, end: date, today:
             intended_day=recurring.day_of_month or recurring.start_date.day,
             weekend_adjustment=recurring.weekend_adjustment,
         )
-        count += len(occurrences)
+        count += sum(
+            home_accounting_mode is None or should_show_home_projection(
+                recurring, occurrence, today, home_accounting_mode
+            )
+            for occurrence in occurrences
+        )
         range_start = chunk_end
     return count
 
@@ -448,6 +461,7 @@ async def _project_recurring_items(
     start: date,
     end: date,
     account_ids: Optional[list[uuid.UUID]],
+    home_accounting_mode: Optional[str] = None,
 ) -> tuple[list[tuple[TransactionCalendarItem, float]], dict[date, float], float]:
     stmt = (
         select(RecurringTransaction)
@@ -468,6 +482,9 @@ async def _project_recurring_items(
         stmt = stmt.where(RecurringTransaction.account_id.in_(account_ids))
     result = await session.execute(stmt)
     recurring_rows = list(result.scalars().all())
+    materialized_occurrences = await _materialized_recurring_occurrences(
+        session, workspace_id, {rec.id for rec in recurring_rows}, start, end,
+    )
 
     items: list[tuple[TransactionCalendarItem, float]] = []
     deltas: dict[date, float] = {}
@@ -494,8 +511,16 @@ async def _project_recurring_items(
         is_transfer = bool(category and category.treat_as_transfer)
         is_ignored = bool(category and category.is_ignored)
         if not is_ignored:
-            carried_delta += _count_occurrences_before(rec, start, today) * signed_delta
+            carried_delta += _count_occurrences_before(
+                rec, start, today, home_accounting_mode
+            ) * signed_delta
         for occ_date in occurrences:
+            if (rec.id, occ_date) in materialized_occurrences:
+                continue
+            if home_accounting_mode and not should_show_home_projection(
+                rec, occ_date, today, home_accounting_mode
+            ):
+                continue
             if not should_show_projection(rec, occ_date, today):
                 continue
             item = TransactionCalendarItem(

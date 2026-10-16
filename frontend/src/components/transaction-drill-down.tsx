@@ -47,10 +47,12 @@ export function TransactionDrillDown({
   filter,
   onClose,
   onTransactionClick,
+  homeView = false,
 }: {
   filter: DrillDownFilter | null
   onClose: () => void
   onTransactionClick?: (tx: Transaction) => void
+  homeView?: boolean
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -81,8 +83,8 @@ export function TransactionDrillDown({
   const monthParam = filter?.from ? filter.from.slice(0, 7) + '-01' : undefined
 
   const { data: projectedTxs } = useQuery({
-    queryKey: ['dashboard', 'projected-transactions', monthParam],
-    queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
+    queryKey: ['dashboard', 'projected-transactions', homeView ? 'home' : 'default', monthParam],
+    queryFn: () => dashboard.projectedTransactions({ month: monthParam, home_view: homeView }),
     enabled: !!filter && !!monthParam,
   })
 

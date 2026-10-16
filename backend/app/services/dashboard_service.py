@@ -25,7 +25,9 @@ from app.services._query_filters import (
 )
 from app.services import invoice_forecast_service
 from app.services.admin_service import get_credit_card_accounting_mode
-from app.services.recurring_transaction_service import get_occurrences_in_range, should_show_projection
+from app.services.recurring_transaction_service import (
+    get_occurrences_in_range, should_show_home_projection, should_show_projection,
+)
 from app.services.asset_service import get_asset_values_at
 from app.services.fx_rate_service import _resolve_rate, convert
 from app.models.user import User
@@ -75,6 +77,7 @@ async def _get_recurring_projections(
     account_ids: Optional[list[uuid.UUID]] = None,
     *,
     include_transfer_like: bool = False,
+    home_accounting_mode: Optional[str] = None,
 ) -> list[dict]:
     """Compute virtual recurring transaction projections for a month.
     Pure read — no DB writes. Returns list of dicts with category_id, amount, type, currency.
@@ -105,6 +108,7 @@ async def _get_recurring_projections(
     stmt = (
         select(RecurringTransaction)
         .outerjoin(Category, RecurringTransaction.category_id == Category.id)
+        .options(selectinload(RecurringTransaction.account))
         .where(*filters)
     )
     if account_ids:
@@ -139,6 +143,10 @@ async def _get_recurring_projections(
             weekend_adjustment=rec.weekend_adjustment,
         )
         for occ_date in occurrences:
+            if home_accounting_mode and not should_show_home_projection(
+                rec, occ_date, today, home_accounting_mode
+            ):
+                continue
             if not should_show_projection(rec, occ_date, today):
                 continue
             if (rec.id, occ_date) in materialized_occurrences:
@@ -275,6 +283,7 @@ async def get_summary(
             month_end,
             account_ids,
             include_transfer_like=True,
+            home_accounting_mode=accounting_mode,
         )
         for proj in balance_projections:
             signed = proj["amount"] if proj["type"] == "credit" else -proj["amount"]
@@ -398,7 +407,8 @@ async def get_summary(
 
     # Add virtual recurring projections
     projections = await _get_recurring_projections(
-        session, workspace_id, month_start, month_end, account_ids
+        session, workspace_id, month_start, month_end, account_ids,
+        home_accounting_mode=accounting_mode,
     )
     forecast_transactions = await _get_forecast_transactions(
         session, workspace_id, month_start, month_end, account_ids,
@@ -934,7 +944,8 @@ async def get_spending_by_category(
 
     # Add virtual recurring projections (debit only), converted to primary currency
     projections = await _get_recurring_projections(
-        session, workspace_id, month_start, month_end, account_ids
+        session, workspace_id, month_start, month_end, account_ids,
+        home_accounting_mode=accounting_mode,
     )
     # We need category info for recurring projections — fetch categories
     cat_cache: dict[str, dict] = {}
@@ -1158,6 +1169,7 @@ async def get_projected_transactions(
     account_id: Optional[uuid.UUID] = None,
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
+    home_view: bool = False,
 ) -> list[ProjectedTransaction]:
     """Return virtual recurring transaction projections for a month,
     enriched with description and category info for display.
@@ -1184,10 +1196,12 @@ async def get_projected_transactions(
     # Get user's primary currency for live conversion
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
+    home_accounting_mode = await get_credit_card_accounting_mode(session) if home_view else None
 
     stmt = (
         select(RecurringTransaction)
         .outerjoin(Category, RecurringTransaction.category_id == Category.id)
+        .options(selectinload(RecurringTransaction.account))
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
@@ -1250,6 +1264,10 @@ async def get_projected_transactions(
                 )
 
         for occ_date in occurrences:
+            if home_accounting_mode and not should_show_home_projection(
+                rec, occ_date, today, home_accounting_mode
+            ):
+                continue
             if not should_show_projection(rec, occ_date, today):
                 continue
             if (rec.id, occ_date) in materialized_occurrences:

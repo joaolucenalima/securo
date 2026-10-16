@@ -543,6 +543,7 @@ export const transactions = {
     month?: string
     account_id?: string
     account_ids?: string[]
+    home_view?: boolean
   }): Promise<TransactionCalendarResponse> => {
     const { data } = await api.get('/transactions/calendar', {
       params,
@@ -1310,7 +1311,7 @@ export const dashboard = {
     const { data } = await api.get('/dashboard/monthly-trend', { params: { months, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
-  projectedTransactions: async (params?: { month?: string; account_id?: string; from?: string; to?: string }): Promise<ProjectedTransaction[]> => {
+  projectedTransactions: async (params?: { month?: string; account_id?: string; from?: string; to?: string; home_view?: boolean }): Promise<ProjectedTransaction[]> => {
     const { data } = await api.get('/dashboard/projected-transactions', { params })
     return data
   },

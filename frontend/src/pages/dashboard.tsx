@@ -191,11 +191,12 @@ export default function DashboardPage() {
   // collection's accounts. Only fetched while the calendar is on screen.
   const calendarAccountIds = acctIds && acctIds.length > 0 ? acctIds : undefined
   const { data: calendarData, isLoading: calendarLoading } = useQuery({
-    queryKey: ['transactions', 'calendar', selectedMonth, activeAccountIds],
+    queryKey: ['transactions', 'calendar', 'home', selectedMonth, activeAccountIds],
     enabled: txViewMode === 'calendar' && !noAccounts,
     queryFn: () => transactions.calendar({
       month: monthStart,
       account_ids: calendarAccountIds,
+      home_view: true,
     }),
   })
 
@@ -212,8 +213,8 @@ export default function DashboardPage() {
   }, [allGroups])
 
   const { data: projectedTxs, isLoading: projectedTxLoading } = useQuery({
-    queryKey: ['dashboard', 'projected-transactions', selectedMonth],
-    queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
+    queryKey: ['dashboard', 'projected-transactions', 'home', selectedMonth],
+    queryFn: () => dashboard.projectedTransactions({ month: monthParam, home_view: true }),
   })
 
   const { data: budgetComparison } = useQuery({
@@ -1363,6 +1364,7 @@ export default function DashboardPage() {
       </div>
 
       <TransactionDrillDown
+        homeView
         filter={
           drillDown
             ? {

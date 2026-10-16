@@ -178,6 +178,7 @@ async def transaction_calendar(
     month: Optional[date] = Query(None),
     account_id: Optional[uuid.UUID] = Query(None),
     account_ids: Optional[List[uuid.UUID]] = Query(None),
+    home_view: bool = Query(False),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -187,6 +188,7 @@ async def transaction_calendar(
         ctx.user_id,
         month,
         account_ids=_merge_id_filters(account_id, account_ids),
+        home_view=home_view,
     )
 
 

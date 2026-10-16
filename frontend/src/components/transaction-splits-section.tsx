@@ -75,6 +75,7 @@ export function TransactionSplitsSection({
   // Once rows have been hydrated for the seeded value, stop applying
   // it — further edits are user-driven.
   const hydratedRef = useRef(false)
+  const [hydratedGroupId, setHydratedGroupId] = useState<string | null>(null)
 
   const queryClient = useQueryClient()
   const [isCreatingGroup, setIsCreatingGroup] = useState(false)
@@ -148,8 +149,8 @@ export function TransactionSplitsSection({
   }, [enabled])
 
   const { data: groups } = useQuery({
-    queryKey: ['groups'],
-    queryFn: () => groupsApi.list(false),
+    queryKey: ['groups', 'all'],
+    queryFn: () => groupsApi.list(true),
   })
 
   const { data: group } = useQuery({
@@ -169,8 +170,8 @@ export function TransactionSplitsSection({
       const match = groups.find((g) => g.members.some((m) => seededIds.has(m.id)))
       if (match) {
         setGroupId(match.id)
-        return
       }
+      return
     }
     setGroupId(groups[0].id)
   }, [enabled, groupId, groups])
@@ -184,13 +185,14 @@ export function TransactionSplitsSection({
     if (!group) return
 
     const groupChanged = lastGroupIdRef.current !== group.id
+    const firstHydration = !hydratedRef.current
+    const initialValue = firstHydration ? seedRef.current : null
     lastGroupIdRef.current = group.id
 
     setRows((prevRows) => {
       // If first hydration or switched groups, rebuild completely
-      if (!hydratedRef.current || groupChanged) {
-        const source = hydratedRef.current ? null : seedRef.current
-        return buildRows(group, source)
+      if (firstHydration || groupChanged) {
+        return buildRows(group, initialValue)
       }
 
       // Otherwise, merge new group members into existing rows state to preserve user selections
@@ -208,6 +210,7 @@ export function TransactionSplitsSection({
     })
 
     hydratedRef.current = true
+    setHydratedGroupId(group.id)
   }, [group])
 
   // Push state up whenever it changes meaningfully.
@@ -216,6 +219,9 @@ export function TransactionSplitsSection({
       onChange(null)
       return
     }
+    // Keep the saved payload intact until the selected group's member rows
+    // have been rebuilt. The first render has no rows while the query loads.
+    if (!group || hydratedGroupId !== groupId) return
     const selected = rows.filter((r) => r.selected)
     if (selected.length === 0) {
       onChange(null)
@@ -238,7 +244,7 @@ export function TransactionSplitsSection({
     })
     onChange({ share_type: shareType, splits })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, shareType, rows])
+  }, [enabled, shareType, rows, group, groupId, hydratedGroupId])
 
   // Validation summary
   const total = useMemo(() => {
