@@ -954,6 +954,7 @@ class TestEffectiveBillDateFiltersList:
             session, cc_account.id, test_workspace.id,
             date_from=start, date_to=end, bill_id=bill.id, bill_cycle_view=True,
         )
+        assert summary is not None
         assert summary["monthly_expenses"] == 30
 
         linked_only, _, _ = await get_transactions(
@@ -992,23 +993,21 @@ class TestEffectiveBillDateFiltersList:
 
         # September 5 is Saturday: the adjusted close is Friday, September 4.
         # The old effective date must not hide an unlinked purchase on that day.
-        cycle_args = dict(
-            bill_id=bill.id if bill else None,
-            unbilled_only=not has_bill,
-            bill_cycle_view=True,
-        )
         rows, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id,
             account_id=cc_account.id,
             from_date=date(2026, 9, 4), to_date=date(2026, 10, 4),
-            accounting_mode="accrual", **cycle_args,
+            accounting_mode="accrual", bill_id=bill.id if bill else None,
+            unbilled_only=not has_bill, bill_cycle_view=True,
         )
         assert purchase.id in {row.id for row in rows}
         summary = await get_account_summary(
             session, cc_account.id, test_workspace.id,
             date_from=date(2026, 9, 4), date_to=date(2026, 10, 4),
-            **cycle_args,
+            bill_id=bill.id if bill else None,
+            unbilled_only=not has_bill, bill_cycle_view=True,
         )
+        assert summary is not None
         assert summary["projected_expenses"] == 42
 
     @pytest.mark.asyncio
