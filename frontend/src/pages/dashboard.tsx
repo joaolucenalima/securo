@@ -342,25 +342,9 @@ export default function DashboardPage() {
   // realised figure, so a month with nothing pending stays quiet.
   const projectedIncome = Number(summary?.projected_income_primary ?? summary?.projected_income ?? income)
   const projectedExpenses = Number(summary?.projected_expenses_primary ?? summary?.projected_expenses ?? expenses)
-  const resultIncome = Number(summary?.result_income_primary ?? income)
-  const resultExpenses = Number(summary?.result_expenses_primary ?? expenses)
   const resultProjectedIncome = Number(summary?.result_projected_income_primary ?? projectedIncome)
   const resultProjectedExpenses = Number(summary?.result_projected_expenses_primary ?? projectedExpenses)
-  // Use the forecast totals for future months so pending and future-dated
-  // transactions contribute alongside virtual recurring occurrences.
-  // For current and past months, keep the existing realised-plus-recurring view.
-  const recurringExpenses = (projectedTxs ?? []).reduce((sum, projection) => {
-    if (projection.type !== 'debit') return sum
-    if (activeAccountIds !== null && !activeAccountIds.includes(projection.account_id ?? '')) return sum
-    const category = categoriesList?.find((item) => item.id === projection.category_id)
-    if (category?.is_ignored || category?.treat_as_transfer) return sum
-    return sum + Number(projection.amount_primary ?? (
-      projection.currency === primaryCurrency ? projection.amount : 0
-    ))
-  }, 0)
-  const monthlyResult = availableBalance + (selectedMonth > currentMonth()
-    ? resultProjectedIncome - resultProjectedExpenses
-    : resultIncome - resultExpenses - recurringExpenses)
+  const monthlyResult = availableBalance + resultProjectedIncome - resultProjectedExpenses
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
   const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
   const daysInMonth = monthLastDay(selectedMonth)
@@ -719,7 +703,7 @@ export default function DashboardPage() {
             )}
           </button>
 
-          {/* Account balance plus income minus expenses and remaining recurrences. */}
+          {/* Account balance plus all monthly income minus all monthly expenses. */}
           <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center gap-1">
               {t('dashboard.monthlyResult')}
@@ -736,19 +720,14 @@ export default function DashboardPage() {
                         <span className="tabular-nums">{mask(formatCurrency(availableBalance, primaryCurrency, locale))}</span>
                       </div>
                       <div className="flex justify-between gap-3">
-                        <span>{t(selectedMonth > currentMonth() ? 'dashboard.projectedIncome' : 'dashboard.monthlyIncome')}</span>
-                        <span className="tabular-nums">{mask(formatCurrency(selectedMonth > currentMonth() ? resultProjectedIncome : resultIncome, primaryCurrency, locale))}</span>
+                        <span>{t('dashboard.projectedIncome')}</span>
+                        <span className="tabular-nums">{mask(formatCurrency(resultProjectedIncome, primaryCurrency, locale))}</span>
                       </div>
                       <div className="flex justify-between gap-3">
-                        <span>{t(selectedMonth > currentMonth() ? 'dashboard.projectedExpenses' : 'dashboard.monthlyExpenses')}</span>
-                        <span className="tabular-nums">-{mask(formatCurrency(selectedMonth > currentMonth() ? resultProjectedExpenses : resultExpenses, primaryCurrency, locale))}</span>
+                        <span>{t('dashboard.projectedExpenses')}</span>
+                        <span className="tabular-nums">-{mask(formatCurrency(resultProjectedExpenses, primaryCurrency, locale))}</span>
                       </div>
-                      {selectedMonth <= currentMonth() && recurringExpenses > 0 && (
-                        <div className="flex justify-between gap-3">
-                          <span>{t('dashboard.recurringExpenses')}</span>
-                          <span className="tabular-nums">-{mask(formatCurrency(recurringExpenses, primaryCurrency, locale))}</span>
-                        </div>
-                      )}
+
                     </div>
                   )}
                 </TooltipContent>

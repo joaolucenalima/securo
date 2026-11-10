@@ -121,10 +121,10 @@ beforeEach(() => {
 })
 
 describe('Dashboard monthly result', () => {
-  it('adds account balance to the viewer share for a future month without changing projected expenses', async () => {
+  it.each([0, 1])('includes forecast totals and viewer share at month offset %s', async (offset) => {
     const nextMonth = new Date()
-    nextMonth.setMonth(nextMonth.getMonth() + 1)
-    const month = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
+    nextMonth.setMonth(nextMonth.getMonth() + offset)
+    const month = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + offset).padStart(2, '0')}`
     api.dashboard.summary.mockResolvedValue({
       ...summary,
       projected_income_primary: 20,

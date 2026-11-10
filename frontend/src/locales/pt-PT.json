@@ -815,9 +815,9 @@
     "passkeyNeverUsed": "Nunca"
   },
   "dashboard": {
-    "monthlyResult": "Monthly result",
-    "monthlyResultTooltip": "Available account balance plus monthly income minus monthly expenses and expected recurring expenses. Uses the amounts shown above, without projected expenses.",
-    "monthlyResultBreakdown": "Available account balance plus income minus expenses. Future months include pending transactions and recurring projections; current and past months include remaining recurring expenses.",
+    "monthlyResult": "Projected balance",
+    "monthlyResultTooltip": "Current account balance plus actual and expected monthly income minus actual and expected monthly expenses.",
+    "monthlyResultBreakdown": "Current account balance plus actual and expected monthly income minus actual and expected monthly expenses. Pending transactions and recurring projections are included once.",
     "recurringExpenses": "Expected recurrences",
     "title": "Painel",
     "greetingMorning": "Bom dia",
