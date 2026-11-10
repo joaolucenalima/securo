@@ -814,8 +814,8 @@
   },
   "dashboard": {
     "monthlyResult": "Monthly result",
-    "monthlyResultTooltip": "Monthly income minus monthly expenses and expected recurring expenses. Uses the amounts shown above, without projected expenses.",
-    "monthlyResultBreakdown": "Income minus expenses. Future months include pending transactions and recurring projections; current and past months include remaining recurring expenses.",
+    "monthlyResultTooltip": "Available account balance plus monthly income minus monthly expenses and expected recurring expenses. Uses the amounts shown above, without projected expenses.",
+    "monthlyResultBreakdown": "Available account balance plus income minus expenses. Future months include pending transactions and recurring projections; current and past months include remaining recurring expenses.",
     "recurringExpenses": "Expected recurrences",
     "title": "ダッシュボード",
     "greetingMorning": "おはようございます",

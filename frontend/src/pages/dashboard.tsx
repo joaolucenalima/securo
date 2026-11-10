@@ -358,9 +358,9 @@ export default function DashboardPage() {
       projection.currency === primaryCurrency ? projection.amount : 0
     ))
   }, 0)
-  const monthlyResult = selectedMonth > currentMonth()
+  const monthlyResult = availableBalance + (selectedMonth > currentMonth()
     ? resultProjectedIncome - resultProjectedExpenses
-    : resultIncome - resultExpenses - recurringExpenses
+    : resultIncome - resultExpenses - recurringExpenses)
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
   const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
   const daysInMonth = monthLastDay(selectedMonth)
@@ -719,7 +719,7 @@ export default function DashboardPage() {
             )}
           </button>
 
-          {/* Actual income minus actual expenses and remaining recurrences. */}
+          {/* Account balance plus income minus expenses and remaining recurrences. */}
           <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center gap-1">
               {t('dashboard.monthlyResult')}
@@ -729,8 +729,12 @@ export default function DashboardPage() {
                 </TooltipTrigger>
                 <TooltipContent className="w-64">
                   <p>{t('dashboard.monthlyResultBreakdown')}</p>
-                  {!summaryLoading && !projectedTxLoading && (
+                  {!summaryLoading && !projectedTxLoading && !accountsUnavailable && (
                     <div className="mt-1.5 space-y-0.5 border-t border-background/20 pt-1.5">
+                      <div className="flex justify-between gap-3">
+                        <span>{t('dashboard.availableBalance')}</span>
+                        <span className="tabular-nums">{mask(formatCurrency(availableBalance, primaryCurrency, locale))}</span>
+                      </div>
                       <div className="flex justify-between gap-3">
                         <span>{t(selectedMonth > currentMonth() ? 'dashboard.projectedIncome' : 'dashboard.monthlyIncome')}</span>
                         <span className="tabular-nums">{mask(formatCurrency(selectedMonth > currentMonth() ? resultProjectedIncome : resultIncome, primaryCurrency, locale))}</span>
@@ -750,7 +754,7 @@ export default function DashboardPage() {
                 </TooltipContent>
               </Tooltip>
             </p>
-            {summaryLoading || projectedTxLoading ? <Skeleton className="h-6 w-24" /> : (
+            {summaryLoading || projectedTxLoading || accountsUnavailable ? <Skeleton className="h-6 w-24" /> : (
               <>
                 <p className={`text-xl font-bold tabular-nums ${monthlyResult < 0 ? 'text-rose-500' : 'text-foreground'}`}>
                   {mask(formatCurrency(monthlyResult, primaryCurrency, locale))}
