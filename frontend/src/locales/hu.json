@@ -813,6 +813,7 @@
     "passkeyNeverUsed": "Soha"
   },
   "dashboard": {
+    "settlementsReceived": "Beérkezett kiegyenlítések",
     "monthlyResult": "Projected balance",
     "monthlyResultTooltip": "Current account balance plus actual and expected monthly income minus actual and expected monthly expenses.",
     "monthlyResultBreakdown": "Current account balance plus actual and expected monthly income minus actual and expected monthly expenses. Pending transactions and recurring projections are included once.",

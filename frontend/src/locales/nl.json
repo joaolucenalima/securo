@@ -813,6 +813,7 @@
     "noAuthMethodConfigured": "Er is geen authenticatiemethode geconfigureerd. Neem contact op met de beheerder en controleer de OIDC-instellingen."
   },
   "dashboard": {
+    "settlementsReceived": "Ontvangen verrekeningen",
     "monthlyResult": "Projected balance",
     "monthlyResultTooltip": "Current account balance plus actual and expected monthly income minus actual and expected monthly expenses.",
     "monthlyResultBreakdown": "Current account balance plus actual and expected monthly income minus actual and expected monthly expenses. Pending transactions and recurring projections are included once.",
