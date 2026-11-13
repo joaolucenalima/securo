@@ -344,7 +344,8 @@ export default function DashboardPage() {
   const projectedExpenses = Number(summary?.projected_expenses_primary ?? summary?.projected_expenses ?? expenses)
   const resultProjectedIncome = Number(summary?.result_projected_income_primary ?? projectedIncome)
   const resultProjectedExpenses = Number(summary?.result_projected_expenses_primary ?? projectedExpenses)
-  const monthlyResult = availableBalance + resultProjectedIncome - resultProjectedExpenses
+  const settlementsReceived = Number(summary?.result_settlements_received_primary ?? 0)
+  const monthlyResult = availableBalance + resultProjectedIncome - resultProjectedExpenses - settlementsReceived
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
   const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
   const daysInMonth = monthLastDay(selectedMonth)
@@ -727,7 +728,12 @@ export default function DashboardPage() {
                         <span>{t('dashboard.projectedExpenses')}</span>
                         <span className="tabular-nums">-{mask(formatCurrency(resultProjectedExpenses, primaryCurrency, locale))}</span>
                       </div>
-
+                      {settlementsReceived !== 0 && (
+                        <div className="flex justify-between gap-3">
+                          <span>{t('dashboard.settlementsReceived')}</span>
+                          <span className="tabular-nums">-{mask(formatCurrency(settlementsReceived, primaryCurrency, locale))}</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </TooltipContent>

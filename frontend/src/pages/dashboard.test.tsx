@@ -121,6 +121,23 @@ beforeEach(() => {
 })
 
 describe('Dashboard monthly result', () => {
+  it('deducts received settlements without limiting the deduction to income', async () => {
+    api.dashboard.summary.mockResolvedValue({
+      ...summary,
+      result_projected_income_primary: 20,
+      result_projected_expenses_primary: 40,
+      result_settlements_received_primary: 200,
+    })
+
+    renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    await screen.findByText(formatCurrency(780, 'USD', 'en-US'))
+  })
+
   it.each([0, 1])('includes forecast totals and viewer share at month offset %s', async (offset) => {
     const nextMonth = new Date()
     nextMonth.setMonth(nextMonth.getMonth() + offset)

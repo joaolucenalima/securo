@@ -21,6 +21,7 @@ class DashboardSummary(BaseModel):
     result_expenses_primary: float = 0.0
     result_projected_income_primary: float = 0.0
     result_projected_expenses_primary: float = 0.0
+    result_settlements_received_primary: float = 0.0
     recurring_expenses_primary: float = 0.0
     accounts_count: int
     pending_categorization: int
