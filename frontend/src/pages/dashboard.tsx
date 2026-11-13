@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { dashboard, transactions, budgets, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, assets as assetsApi, goals as goalsApi, groups as groupsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
+import { dashboard, transactions, budgets, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, goals as goalsApi, groups as groupsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -87,18 +87,6 @@ export default function DashboardPage() {
   const { mask } = usePrivacyMode()
   const isMobile = useIsMobile()
   const { user } = useAuth()
-  const [cdbChoices, setCdbChoices] = useState<Record<string, boolean>>({})
-  const cdbChoiceKey = user?.id
-    ? `securo.dashboard.includeCdb.${user.id}`
-    : null
-  const includeCdb = cdbChoiceKey != null && (
-    cdbChoices[cdbChoiceKey] ?? localStorage.getItem(cdbChoiceKey) === 'true'
-  )
-  const setIncludeCdb = (checked: boolean) => {
-    if (!cdbChoiceKey) return
-    localStorage.setItem(cdbChoiceKey, String(checked))
-    setCdbChoices((choices) => ({ ...choices, [cdbChoiceKey]: checked }))
-  }
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const displayName = user?.preferences?.display_name || ''
   const locale = useDisplayLocale()
@@ -113,7 +101,6 @@ export default function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedMonth = parseMonthFromParams(searchParams) ?? currentMonth()
   const isCurrentMonth = selectedMonth === currentMonth()
-  const includeCdbForCurrentMonth = isCurrentMonth && includeCdb
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null)
   // Transactions section view, mirroring the transactions page: the choice
   // lives in the URL so the section can be refreshed, bookmarked or shared.
@@ -236,12 +223,6 @@ export default function DashboardPage() {
     queryFn: () => accountsApi.list(),
   })
 
-  const { data: assetsList, isLoading: assetsLoading } = useQuery({
-    queryKey: ['assets'],
-    queryFn: () => assetsApi.list(),
-    enabled: includeCdbForCurrentMonth,
-  })
-
   const { data: payeesList } = useQuery({
     queryKey: ['payees'],
     queryFn: payeesApi.list,
@@ -337,8 +318,7 @@ export default function DashboardPage() {
 
 
   const primaryCurrency = summary?.primary_currency ?? userCurrency
-  // The bank balance starts with checking/savings accounts. The CDB option
-  // adds CDB holdings to the spending figures.
+  // The bank balance includes checking and savings accounts.
   const availableBalanceAccounts = useMemo(() => {
     const all = accountsList ?? []
     const scoped = activeAccountIds ? all.filter((a) => activeAccountIds.includes(a.id)) : all
@@ -347,13 +327,6 @@ export default function DashboardPage() {
   const availableBalance = availableBalanceAccounts.reduce(
     (sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0,
   )
-  const currentCdbValue = (assetsList ?? [])
-    .filter((asset) => asset.type === 'investment' && !asset.sell_date &&
-      asset.name.toLocaleLowerCase().includes('cdb') &&
-      (activeWalletIds === null || activeWalletIds.includes(asset.group_id ?? '')))
-    .reduce((sum, asset) => sum + Number(asset.current_value_primary ?? asset.current_value ?? 0), 0)
-  const cdbValue = currentCdbValue
-  const spendableBalance = availableBalance + (includeCdbForCurrentMonth ? cdbValue : 0)
   const sortedAvailableBalanceAccounts = useMemo(
     () => sortAccountsByAbsoluteBalance(availableBalanceAccounts, (a) => a.balance_primary ?? a.current_balance),
     [availableBalanceAccounts],
@@ -369,25 +342,10 @@ export default function DashboardPage() {
   // realised figure, so a month with nothing pending stays quiet.
   const projectedIncome = Number(summary?.projected_income_primary ?? summary?.projected_income ?? income)
   const projectedExpenses = Number(summary?.projected_expenses_primary ?? summary?.projected_expenses ?? expenses)
-  const resultIncome = Number(summary?.result_income_primary ?? income)
-  const resultExpenses = Number(summary?.result_expenses_primary ?? expenses)
   const resultProjectedIncome = Number(summary?.result_projected_income_primary ?? projectedIncome)
   const resultProjectedExpenses = Number(summary?.result_projected_expenses_primary ?? projectedExpenses)
-  // Use the forecast totals for future months so pending and future-dated
-  // transactions contribute alongside virtual recurring occurrences.
-  // For current and past months, keep the existing realised-plus-recurring view.
-  const recurringExpenses = (projectedTxs ?? []).reduce((sum, projection) => {
-    if (projection.type !== 'debit') return sum
-    if (activeAccountIds !== null && !activeAccountIds.includes(projection.account_id ?? '')) return sum
-    const category = categoriesList?.find((item) => item.id === projection.category_id)
-    if (category?.is_ignored || category?.treat_as_transfer) return sum
-    return sum + Number(projection.amount_primary ?? (
-      projection.currency === primaryCurrency ? projection.amount : 0
-    ))
-  }, 0)
-  const monthlyResult = selectedMonth > currentMonth()
-    ? resultProjectedIncome - resultProjectedExpenses
-    : resultIncome - resultExpenses - recurringExpenses + (includeCdbForCurrentMonth ? cdbValue : 0)
+  const settlementsReceived = Number(summary?.result_settlements_received_primary ?? 0)
+  const monthlyResult = availableBalance + resultProjectedIncome - resultProjectedExpenses - settlementsReceived
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
   const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
   const daysInMonth = monthLastDay(selectedMonth)
@@ -618,10 +576,10 @@ export default function DashboardPage() {
 
       {/* Hero Card: Available Balance + secondary indicators */}
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5 px-5 pt-5 pb-4">
-        {/* Available balance in checking/savings accounts and optional CDBs */}
+        {/* Available balance in checking/savings accounts  */}
         <div className="pb-4 mb-4 border-b border-border">
           <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
-          {summaryLoading || accountsUnavailable || (includeCdbForCurrentMonth && assetsLoading) ? (
+          {summaryLoading || accountsUnavailable ? (
             <Skeleton className="h-9 w-40" />
           ) : (
             <>
@@ -629,12 +587,9 @@ export default function DashboardPage() {
                   colour is left to mean direction (income, expenses) and
                   exception (a negative balance), so it still says something
                   when it does appear. */}
-              <p className={`text-3xl font-bold tabular-nums leading-tight ${spendableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
-                {mask(formatCurrency(spendableBalance, primaryCurrency, locale))}
+              <p className={`text-3xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
+                {mask(formatCurrency(availableBalance, primaryCurrency, locale))}
               </p>
-              {includeCdbForCurrentMonth && <p className="text-xs text-muted-foreground tabular-nums mt-1">
-                {t('dashboard.includedCdb')} {mask(formatCurrency(cdbValue, primaryCurrency, locale))}
-              </p>}
               {sortedAvailableBalanceAccounts.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {sortedAvailableBalanceAccounts.map((acc) => {
@@ -749,7 +704,7 @@ export default function DashboardPage() {
             )}
           </button>
 
-          {/* Actual income minus actual expenses and remaining recurrences. */}
+          {/* Account balance plus all monthly income minus all monthly expenses. */}
           <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center gap-1">
               {t('dashboard.monthlyResult')}
@@ -759,26 +714,24 @@ export default function DashboardPage() {
                 </TooltipTrigger>
                 <TooltipContent className="w-64">
                   <p>{t('dashboard.monthlyResultBreakdown')}</p>
-                  {!summaryLoading && !projectedTxLoading && (!includeCdbForCurrentMonth || !assetsLoading) && (
+                  {!summaryLoading && !projectedTxLoading && !accountsUnavailable && (
                     <div className="mt-1.5 space-y-0.5 border-t border-background/20 pt-1.5">
                       <div className="flex justify-between gap-3">
-                        <span>{t(selectedMonth > currentMonth() ? 'dashboard.projectedIncome' : 'dashboard.monthlyIncome')}</span>
-                        <span className="tabular-nums">{mask(formatCurrency(selectedMonth > currentMonth() ? resultProjectedIncome : resultIncome, primaryCurrency, locale))}</span>
+                        <span>{t('dashboard.availableBalance')}</span>
+                        <span className="tabular-nums">{mask(formatCurrency(availableBalance, primaryCurrency, locale))}</span>
                       </div>
                       <div className="flex justify-between gap-3">
-                        <span>{t(selectedMonth > currentMonth() ? 'dashboard.projectedExpenses' : 'dashboard.monthlyExpenses')}</span>
-                        <span className="tabular-nums">-{mask(formatCurrency(selectedMonth > currentMonth() ? resultProjectedExpenses : resultExpenses, primaryCurrency, locale))}</span>
+                        <span>{t('dashboard.projectedIncome')}</span>
+                        <span className="tabular-nums">{mask(formatCurrency(resultProjectedIncome, primaryCurrency, locale))}</span>
                       </div>
-                      {selectedMonth <= currentMonth() && recurringExpenses > 0 && (
+                      <div className="flex justify-between gap-3">
+                        <span>{t('dashboard.projectedExpenses')}</span>
+                        <span className="tabular-nums">-{mask(formatCurrency(resultProjectedExpenses, primaryCurrency, locale))}</span>
+                      </div>
+                      {settlementsReceived !== 0 && (
                         <div className="flex justify-between gap-3">
-                          <span>{t('dashboard.recurringExpenses')}</span>
-                          <span className="tabular-nums">-{mask(formatCurrency(recurringExpenses, primaryCurrency, locale))}</span>
-                        </div>
-                      )}
-                      {includeCdbForCurrentMonth && (
-                        <div className="flex justify-between gap-3">
-                          <span>{t('dashboard.monthlyResultCdb')}</span>
-                          <span className="tabular-nums">{mask(formatCurrency(cdbValue, primaryCurrency, locale))}</span>
+                          <span>{t('dashboard.settlementsReceived')}</span>
+                          <span className="tabular-nums">-{mask(formatCurrency(settlementsReceived, primaryCurrency, locale))}</span>
                         </div>
                       )}
                     </div>
@@ -786,23 +739,13 @@ export default function DashboardPage() {
                 </TooltipContent>
               </Tooltip>
             </p>
-            {summaryLoading || projectedTxLoading || (includeCdbForCurrentMonth && assetsLoading) ? <Skeleton className="h-6 w-24" /> : (
+            {summaryLoading || projectedTxLoading || accountsUnavailable ? <Skeleton className="h-6 w-24" /> : (
               <>
                 <p className={`text-xl font-bold tabular-nums ${monthlyResult < 0 ? 'text-rose-500' : 'text-foreground'}`}>
                   {mask(formatCurrency(monthlyResult, primaryCurrency, locale))}
                 </p>
               </>
             )}
-            {isCurrentMonth && <label className="mt-2 inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeCdb}
-                disabled={!cdbChoiceKey}
-                onChange={(event) => setIncludeCdb(event.target.checked)}
-                className="size-3.5 rounded border-border accent-primary"
-              />
-              {t('dashboard.includeCdb')}
-            </label>}
           </div>
 
           {/* Savings rate */}

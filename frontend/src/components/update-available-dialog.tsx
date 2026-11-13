@@ -26,7 +26,7 @@ import { useAutoUpdateCheck } from '@/hooks/use-auto-update-check'
 import { useLatestRelease } from '@/hooks/use-latest-release'
 import { isUpdateAvailable } from '@/lib/semver'
 
-const UPGRADE_COMMAND = 'git pull && docker compose up -d --build'
+const UPGRADE_COMMAND = 'docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d'
 
 interface UpdateAvailableDialogProps {
   open: boolean

@@ -121,10 +121,27 @@ beforeEach(() => {
 })
 
 describe('Dashboard monthly result', () => {
-  it('uses the viewer share for a future month without changing projected expenses', async () => {
+  it('deducts received settlements without limiting the deduction to income', async () => {
+    api.dashboard.summary.mockResolvedValue({
+      ...summary,
+      result_projected_income_primary: 20,
+      result_projected_expenses_primary: 40,
+      result_settlements_received_primary: 200,
+    })
+
+    renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    await screen.findByText(formatCurrency(780, 'USD', 'en-US'))
+  })
+
+  it.each([0, 1])('includes forecast totals and viewer share at month offset %s', async (offset) => {
     const nextMonth = new Date()
-    nextMonth.setMonth(nextMonth.getMonth() + 1)
-    const month = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
+    nextMonth.setMonth(nextMonth.getMonth() + offset)
+    const month = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + offset).padStart(2, '0')}`
     api.dashboard.summary.mockResolvedValue({
       ...summary,
       projected_income_primary: 20,
@@ -139,7 +156,7 @@ describe('Dashboard monthly result', () => {
       { route: `/?month=${month}` },
     )
 
-    await screen.findByText(formatCurrency(-20, 'USD', 'en-US'))
+    await screen.findByText(formatCurrency(980, 'USD', 'en-US'))
     expect(screen.getByText(new RegExp(formatCurrency(311.83, 'USD', 'en-US').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))).toBeInTheDocument()
     await user.hover(screen.getByRole('button', { name: 'i' }))
 

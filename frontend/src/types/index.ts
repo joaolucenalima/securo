@@ -716,6 +716,7 @@ export interface DashboardSummary {
   result_expenses_primary?: number
   result_projected_income_primary?: number
   result_projected_expenses_primary?: number
+  result_settlements_received_primary?: number
   recurring_expenses_primary?: number
   accounts_count: number
   pending_categorization: number

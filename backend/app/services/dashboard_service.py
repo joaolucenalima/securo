@@ -717,6 +717,33 @@ async def get_summary(
         )
     )
 
+    from app.models.group import Group, GroupMember
+    from app.models.group_settlement import GroupSettlement
+
+    received_settlements = await session.execute(
+        select(GroupSettlement)
+        .join(Group, GroupSettlement.group_id == Group.id)
+        .join(GroupMember, GroupSettlement.to_member_id == GroupMember.id)
+        .where(
+            GroupSettlement.date >= month_start,
+            GroupSettlement.date < month_end,
+            or_(
+                (Group.user_id == user_id)
+                & (Group.workspace_id == workspace_id)
+                & GroupMember.is_self.is_(True),
+                (GroupMember.linked_user_id == user_id)
+                & GroupMember.is_self.is_(False),
+            ),
+        )
+    )
+    settlements_received_primary = Decimal("0")
+    for settlement in received_settlements.scalars():
+        converted, _ = await convert(
+            session, settlement.amount, settlement.currency,
+            primary_currency, settlement.date,
+        )
+        settlements_received_primary += converted
+
     return DashboardSummary(
         total_balance=total_balance,
         total_balance_primary=round(total_balance_primary, 2),
@@ -735,6 +762,7 @@ async def get_summary(
         result_expenses_primary=round(result_expenses_primary, 2),
         result_projected_income_primary=round(result_projected_income_primary, 2),
         result_projected_expenses_primary=round(result_projected_expenses_primary, 2),
+        result_settlements_received_primary=round(float(settlements_received_primary), 2),
         recurring_expenses_primary=round(recurring_expenses_primary, 2),
         accounts_count=accounts_count,
         pending_categorization=pending_categorization,

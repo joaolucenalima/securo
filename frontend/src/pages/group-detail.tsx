@@ -335,6 +335,7 @@ export default function GroupDetailPage() {
     mutationFn: (payload: GroupSettlementPayload) =>
       groupsApi.settlements.create(groupId, payload),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       queryClient.invalidateQueries({ queryKey: ['groups', groupId, 'settlements'] })
       queryClient.invalidateQueries({ queryKey: ['groups', groupId, 'balances'] })
       setSettleOpen(false)
@@ -353,6 +354,7 @@ export default function GroupDetailPage() {
     mutationFn: (settlementId: string) =>
       groupsApi.settlements.delete(groupId, settlementId),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       queryClient.invalidateQueries({ queryKey: ['groups', groupId, 'settlements'] })
       queryClient.invalidateQueries({ queryKey: ['groups', groupId, 'balances'] })
     },
